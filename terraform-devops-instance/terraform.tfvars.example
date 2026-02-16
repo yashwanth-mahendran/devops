@@ -1,0 +1,22 @@
+aws_region         = "us-west-2"
+project_name       = "devops-instance"
+vpc_cidr           = "10.0.0.0/16"
+public_subnet_cidr = "10.0.1.0/24"
+availability_zone  = "us-west-2a"
+instance_type      = "t3.large"
+ssh_allowed_cidr   = "0.0.0.0/0"  # Change to your IP for security
+key_name           = "devops-key"  # Name for the new SSH key pair (will be auto-generated)
+
+# Tool Versions (Latest Stable - Update as needed)
+terraform_version = "1.10.3"
+kubectl_version   = "latest"
+helm_version      = "latest"
+docker_compose_version = "latest"
+maven_version     = "3.9.9"
+nodejs_version    = "22"
+python_version    = "3.12"
+java_version      = "21"
+trivy_version     = "0.58.1"
+eksctl_version    = "latest"
+k9s_version       = "latest"
+instance_count    = 1  # Number of EC2 instances to create

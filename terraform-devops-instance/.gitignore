@@ -1,0 +1,37 @@
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.tfvars
+!terraform.tfvars.example
+*.tfplan
+*.tfbackup
+
+# SSH keys
+*.pem
+*.pub
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+/tmp/
+*.tmp
+*.bak
+
+# Package files
+devops-packages.json
+mlops-packages.json
+install-mlops.sh
