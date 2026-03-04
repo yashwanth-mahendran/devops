@@ -1,0 +1,44 @@
+---
+# Group variables for database servers
+# Applied to all hosts in the 'dbservers' group
+
+# PostgreSQL configuration
+postgresql_version: 15
+postgresql_port: 5432
+postgresql_data_dir: /var/lib/postgresql/{{ postgresql_version }}/main
+postgresql_config_dir: /etc/postgresql/{{ postgresql_version }}/main
+
+# Connection settings
+postgresql_max_connections: 200
+postgresql_shared_buffers: "{{ (ansible_memtotal_mb * 0.25) | int }}MB"
+postgresql_effective_cache_size: "{{ (ansible_memtotal_mb * 0.75) | int }}MB"
+postgresql_work_mem: 16MB
+
+# Authentication
+postgresql_listen_addresses: "*"
+postgresql_hba_entries:
+  - { type: local, database: all, user: postgres, method: peer }
+  - { type: host, database: all, user: all, address: "10.0.0.0/8", method: md5 }
+  - { type: host, database: all, user: all, address: "192.168.0.0/16", method: md5 }
+
+# Replication settings
+postgresql_replication_enabled: false
+postgresql_replication_user: replicator
+postgresql_wal_level: replica
+postgresql_max_wal_senders: 5
+
+# Backup configuration
+backup_enabled: true
+backup_schedule: "0 2 * * *"  # 2 AM daily
+backup_retention_days: 30
+backup_directory: /var/backups/postgresql
+
+# Monitoring
+postgresql_log_statement: mod
+postgresql_log_min_duration_statement: 1000  # Log queries > 1 second
+enable_pg_stat_statements: true
+
+# Firewall
+firewall_allowed_ports:
+  - 5432
+  - 9187  # PostgreSQL exporter

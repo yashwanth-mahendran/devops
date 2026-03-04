@@ -1,0 +1,168 @@
+---
+# 08-filters.yml
+# Demonstrates Jinja2 filters in Ansible
+
+- name: Filter Examples
+  hosts: localhost
+  gather_facts: yes
+
+  vars:
+    my_string: "Hello Ansible World"
+    my_list: [3, 1, 4, 1, 5, 9, 2, 6]
+    my_dict:
+      name: John
+      age: 30
+      city: NYC
+    users:
+      - name: alice
+        admin: true
+      - name: bob
+        admin: false
+      - name: carol
+        admin: true
+
+  tasks:
+    # String filters
+    - name: String filters
+      debug:
+        msg: |
+          Original: {{ my_string }}
+          Upper: {{ my_string | upper }}
+          Lower: {{ my_string | lower }}
+          Title: {{ my_string | title }}
+          Replace: {{ my_string | replace('World', 'Universe') }}
+          Length: {{ my_string | length }}
+          Regex: {{ my_string | regex_replace('World', 'Everyone') }}
+
+    # List filters
+    - name: List filters
+      debug:
+        msg: |
+          Original: {{ my_list }}
+          Sorted: {{ my_list | sort }}
+          Unique: {{ my_list | unique }}
+          First: {{ my_list | first }}
+          Last: {{ my_list | last }}
+          Min: {{ my_list | min }}
+          Max: {{ my_list | max }}
+          Sum: {{ my_list | sum }}
+          Join: {{ my_list | join(', ') }}
+          Random: {{ my_list | random }}
+          Reverse: {{ my_list | reverse | list }}
+
+    # Dictionary filters
+    - name: Dict filters
+      debug:
+        msg: |
+          Dict to items: {{ my_dict | dict2items }}
+          Combine: {{ my_dict | combine({'country': 'USA'}) }}
+
+    # Default and mandatory
+    - name: Default filter
+      debug:
+        msg: |
+          With default: {{ undefined_var | default('default_value') }}
+          Default omit: {{ undefined_var | default(omit) }}
+
+    # Type conversion
+    - name: Type conversion
+      debug:
+        msg: |
+          To int: {{ "42" | int }}
+          To float: {{ "3.14" | float }}
+          To bool: {{ "yes" | bool }}
+          To YAML: {{ my_dict | to_yaml }}
+          To JSON: {{ my_dict | to_json }}
+          To nice JSON: {{ my_dict | to_nice_json }}
+
+    # Path manipulation
+    - name: Path filters
+      debug:
+        msg: |
+          Basename: {{ "/path/to/file.txt" | basename }}
+          Dirname: {{ "/path/to/file.txt" | dirname }}
+          Expanduser: {{ "~/.ssh" | expanduser }}
+          Realpath: {{ "." | realpath }}
+
+    # IP address filters
+    - name: IP filters
+      debug:
+        msg: |
+          IPv4: {{ '192.168.1.10/24' | ipaddr('address') }}
+          Network: {{ '192.168.1.10/24' | ipaddr('network') }}
+          Netmask: {{ '192.168.1.10/24' | ipaddr('netmask') }}
+
+    # Hash and encryption
+    - name: Hash filters
+      debug:
+        msg: |
+          SHA256: {{ 'password' | hash('sha256') }}
+          MD5: {{ 'password' | hash('md5') }}
+          Password hash: {{ 'password' | password_hash('sha512') }}
+
+    # Base64
+    - name: Base64 filters
+      debug:
+        msg: |
+          Encode: {{ 'Hello' | b64encode }}
+          Decode: {{ 'SGVsbG8=' | b64decode }}
+
+    # JSON Query (requires jmespath)
+    - name: JSON Query filter
+      debug:
+        msg: |
+          Admin users: {{ users | json_query('[?admin==`true`].name') }}
+
+    # Map and select filters
+    - name: Map and select
+      debug:
+        msg: |
+          Names only: {{ users | map(attribute='name') | list }}
+          Admins: {{ users | selectattr('admin', 'equalto', true) | list }}
+          Non-admins: {{ users | rejectattr('admin') | list }}
+
+    # Regex filters
+    - name: Regex filters
+      debug:
+        msg: |
+          Match: {{ my_string | regex_search('Ansible') }}
+          Find all: {{ 'abc123def456' | regex_findall('[0-9]+') }}
+
+    # Comment filter (for config files)
+    - name: Comment filter
+      debug:
+        msg: "{{ 'This is a comment' | comment }}"
+
+    # Ternary (if-else shorthand)
+    - name: Ternary filter
+      vars:
+        is_production: true
+      debug:
+        msg: "Environment: {{ 'PRODUCTION' if is_production else 'DEVELOPMENT' }}"
+
+    # Human readable
+    - name: Human readable filter
+      debug:
+        msg: |
+          Bytes: {{ 1073741824 | human_readable }}
+          Time: {{ 3661 | human_readable(unit='seconds') }}
+
+    # Split and join
+    - name: Split filter
+      debug:
+        msg: "{{ 'a,b,c,d' | split(',') }}"
+
+    # Flatten nested lists
+    - name: Flatten filter
+      vars:
+        nested: [[1, 2], [3, 4], [5, 6]]
+      debug:
+        msg: "{{ nested | flatten }}"
+
+    # Zip lists
+    - name: Zip filter
+      vars:
+        list1: [1, 2, 3]
+        list2: ['a', 'b', 'c']
+      debug:
+        msg: "{{ list1 | zip(list2) | list }}"

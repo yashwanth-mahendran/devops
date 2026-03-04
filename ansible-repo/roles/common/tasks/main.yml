@@ -1,0 +1,28 @@
+---
+# Common role - Applied to all servers
+# Handles: system updates, common packages, users, SSH hardening, NTP
+
+# tasks/main.yml includes all task files
+- name: Include OS-specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution | lower }}-{{ ansible_distribution_version }}.yml"
+    - "{{ ansible_distribution | lower }}.yml"
+    - "{{ ansible_os_family | lower }}.yml"
+    - default.yml
+
+- name: Import security tasks
+  import_tasks: security.yml
+  tags: security
+
+- name: Import users tasks
+  import_tasks: users.yml
+  tags: users
+
+- name: Import packages tasks
+  import_tasks: packages.yml
+  tags: packages
+
+- name: Import system tasks
+  import_tasks: system.yml
+  tags: system

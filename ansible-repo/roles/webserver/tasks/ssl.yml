@@ -1,0 +1,73 @@
+---
+# SSL configuration tasks
+
+- name: Create SSL directory
+  file:
+    path: "{{ nginx_ssl_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Generate self-signed SSL certificate
+  block:
+    - name: Generate private key
+      openssl_privatekey:
+        path: "{{ nginx_ssl_dir }}/{{ item.name }}.key"
+        size: 4096
+      loop: "{{ nginx_vhosts }}"
+      when: item.ssl | default(false) | bool
+
+    - name: Generate CSR
+      openssl_csr:
+        path: "{{ nginx_ssl_dir }}/{{ item.name }}.csr"
+        privatekey_path: "{{ nginx_ssl_dir }}/{{ item.name }}.key"
+        common_name: "{{ item.server_name | default(item.name) }}"
+      loop: "{{ nginx_vhosts }}"
+      when: item.ssl | default(false) | bool
+
+    - name: Generate self-signed certificate
+      openssl_certificate:
+        path: "{{ nginx_ssl_dir }}/{{ item.name }}.crt"
+        privatekey_path: "{{ nginx_ssl_dir }}/{{ item.name }}.key"
+        csr_path: "{{ nginx_ssl_dir }}/{{ item.name }}.csr"
+        provider: selfsigned
+        selfsigned_not_after: "+365d"
+      loop: "{{ nginx_vhosts }}"
+      when: item.ssl | default(false) | bool
+  when: nginx_ssl_self_signed | bool
+
+- name: Copy SSL certificates
+  block:
+    - name: Copy SSL certificate
+      copy:
+        src: "{{ item.ssl_cert_src }}"
+        dest: "{{ nginx_ssl_dir }}/{{ item.name }}.crt"
+        owner: root
+        mode: '0644'
+      loop: "{{ nginx_vhosts }}"
+      when:
+        - item.ssl | default(false) | bool
+        - item.ssl_cert_src is defined
+      notify: reload nginx
+
+    - name: Copy SSL private key
+      copy:
+        src: "{{ item.ssl_key_src }}"
+        dest: "{{ nginx_ssl_dir }}/{{ item.name }}.key"
+        owner: root
+        mode: '0600'
+      loop: "{{ nginx_vhosts }}"
+      when:
+        - item.ssl | default(false) | bool
+        - item.ssl_key_src is defined
+      notify: reload nginx
+  when: not nginx_ssl_self_signed | bool
+
+- name: Configure SSL parameters
+  template:
+    src: ssl-params.conf.j2
+    dest: "{{ nginx_conf_dir }}/conf.d/ssl-params.conf"
+    owner: root
+    mode: '0644'
+  notify: reload nginx

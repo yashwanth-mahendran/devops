@@ -1,0 +1,44 @@
+---
+# Example vault file structure (THIS FILE IS NOT ENCRYPTED - FOR REFERENCE)
+# In production, encrypt this with: ansible-vault encrypt vault_example.yml
+
+# Database credentials
+vault_db_username: admin
+vault_db_password: supersecretpassword123
+vault_db_host: db.example.com
+vault_db_port: 5432
+vault_db_name: production
+
+# API keys
+vault_api_key: sk-1234567890abcdef
+vault_api_secret: secret-key-here
+
+# SSL certificates (base64 encoded)
+vault_ssl_certificate: |
+  -----BEGIN CERTIFICATE-----
+  MIIDXTCCAkWgAwIBAgIJAJC1HiIAZAiU...
+  -----END CERTIFICATE-----
+
+vault_ssl_private_key: |
+  -----BEGIN PRIVATE KEY-----
+  MIIEvgIBADANBgkqhkiG9w0BAQEF...
+  -----END PRIVATE KEY-----
+
+# AWS credentials
+vault_aws_access_key: AKIAIOSFODNN7EXAMPLE
+vault_aws_secret_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# Application secrets
+vault_app_secret_key: django-insecure-key-change-this
+vault_jwt_secret: jwt-secret-key-here
+
+# User passwords (hashed)
+vault_user_passwords:
+  admin: "$6$rounds=656000$..."
+  deploy: "$6$rounds=656000$..."
+
+# SSH keys
+vault_deploy_ssh_private_key: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  b3BlbnNzaC1rZXktdjEAAAAABG5vbmU...
+  -----END OPENSSH PRIVATE KEY-----

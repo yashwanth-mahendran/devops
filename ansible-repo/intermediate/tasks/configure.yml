@@ -1,0 +1,10 @@
+---
+# Configure tasks
+# Include with: include_tasks: tasks/configure.yml
+
+- name: Configure application
+  debug:
+    msg: |
+      Configuring with:
+      Config file: {{ config_file }}
+      Mode: {{ mode }}

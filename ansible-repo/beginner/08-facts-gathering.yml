@@ -1,0 +1,106 @@
+---
+# 08-facts-gathering.yml
+# Demonstrates gathering and using system facts
+# Facts are automatically collected variables about managed hosts
+
+- name: Working with Facts
+  hosts: all
+  gather_facts: yes  # This is default, shown explicitly
+
+  tasks:
+    # Display basic system information
+    - name: Show OS Distribution
+      debug:
+        msg: "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Show hostname and IP
+      debug:
+        msg: |
+          Hostname: {{ ansible_hostname }}
+          FQDN: {{ ansible_fqdn }}
+          Default IPv4: {{ ansible_default_ipv4.address | default('N/A') }}
+
+    - name: Show memory information
+      debug:
+        msg: |
+          Total Memory: {{ ansible_memtotal_mb }} MB
+          Free Memory: {{ ansible_memfree_mb }} MB
+
+    - name: Show CPU information
+      debug:
+        msg: |
+          CPU Cores: {{ ansible_processor_cores }}
+          vCPUs: {{ ansible_processor_vcpus }}
+          Architecture: {{ ansible_architecture }}
+
+    - name: Show disk information
+      debug:
+        msg: "Mount {{ item.mount }}: {{ item.size_total | human_readable }} total"
+      loop: "{{ ansible_mounts }}"
+      when: item.mount == "/"
+
+    # Conditional based on facts
+    - name: Task for Debian-based systems
+      debug:
+        msg: "This is a Debian-based system"
+      when: ansible_os_family == "Debian"
+
+    - name: Task for RedHat-based systems
+      debug:
+        msg: "This is a RedHat-based system"
+      when: ansible_os_family == "RedHat"
+
+    # Using facts to make decisions
+    - name: Check if system has enough memory
+      debug:
+        msg: "System has sufficient memory (>1GB)"
+      when: ansible_memtotal_mb > 1024
+
+    - name: Save facts to a file
+      copy:
+        content: "{{ ansible_facts | to_nice_yaml }}"
+        dest: /tmp/ansible_facts.yml
+        mode: '0644'
+
+
+# How to use custom facts (create on managed host):
+# mkdir -p /etc/ansible/facts.d
+# Create executable script or .fact file:
+# /etc/ansible/facts.d/custom.fact:
+# [general]
+# app_version=1.0.0
+# environment=production
+
+- name: Using Custom Facts
+  hosts: all
+  gather_facts: yes
+
+  tasks:
+    # Create a custom fact file
+    - name: Create facts directory
+      file:
+        path: /etc/ansible/facts.d
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: Create custom fact
+      copy:
+        content: |
+          [app]
+          name=myapp
+          version=1.0.0
+          environment=development
+        dest: /etc/ansible/facts.d/custom.fact
+        mode: '0644'
+      become: yes
+
+    # Re-gather facts to get custom facts
+    - name: Re-gather facts
+      setup:
+        filter: ansible_local
+
+    # Use custom fact
+    - name: Display custom fact
+      debug:
+        msg: "App: {{ ansible_local.custom.app.name | default('unknown') }} v{{ ansible_local.custom.app.version | default('0.0.0') }}"

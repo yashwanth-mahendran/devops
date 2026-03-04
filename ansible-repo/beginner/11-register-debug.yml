@@ -1,0 +1,109 @@
+---
+# 11-register-debug.yml
+# Demonstrates registering output and debugging
+
+- name: Register and Debug Examples
+  hosts: all
+  gather_facts: no
+
+  vars:
+    my_list:
+      - apple
+      - banana
+      - cherry
+    my_dict:
+      name: John
+      age: 30
+      city: NYC
+
+  tasks:
+    # Basic register
+    - name: Run command and register output
+      command: echo "Hello, Ansible!"
+      register: cmd_result
+
+    - name: Display full registered variable
+      debug:
+        var: cmd_result
+
+    - name: Display specific fields
+      debug:
+        msg: |
+          stdout: {{ cmd_result.stdout }}
+          return code: {{ cmd_result.rc }}
+          changed: {{ cmd_result.changed }}
+
+    # Debug module variations
+    - name: Debug with var (no quotes needed)
+      debug:
+        var: my_list
+
+    - name: Debug with msg (Jinja2 syntax)
+      debug:
+        msg: "List items: {{ my_list | join(', ') }}"
+
+    - name: Debug with verbosity (only shows with -v or higher)
+      debug:
+        msg: "Detailed debug info"
+        verbosity: 1
+
+    - name: Debug dictionary
+      debug:
+        msg: "Name: {{ my_dict.name }}, Age: {{ my_dict.age }}"
+
+    # Filtering registered output
+    - name: Get list of files
+      shell: ls -la /tmp | head -5
+      register: file_list
+      changed_when: false
+
+    - name: Display file list
+      debug:
+        var: file_list.stdout_lines
+
+    # Using registered variables in conditions
+    - name: Check if file exists
+      stat:
+        path: /etc/passwd
+      register: passwd_file
+
+    - name: File exists message
+      debug:
+        msg: "/etc/passwd exists and is {{ passwd_file.stat.size }} bytes"
+      when: passwd_file.stat.exists
+
+    # Register with loops
+    - name: Multiple commands
+      command: "echo {{ item }}"
+      loop:
+        - first
+        - second
+        - third
+      register: loop_results
+
+    - name: Display loop results
+      debug:
+        msg: "Output: {{ item.stdout }}"
+      loop: "{{ loop_results.results }}"
+
+    # Pause for debugging
+    - name: Pause for manual inspection
+      pause:
+        seconds: 1
+        prompt: "Press Enter to continue..."
+      when: false  # Set to true to enable
+
+    # Print all variables (for debugging)
+    - name: Print all host variables
+      debug:
+        var: hostvars[inventory_hostname]
+      when: false  # Too verbose, enable as needed
+
+    # Assert for validation
+    - name: Validate registered output
+      assert:
+        that:
+          - cmd_result.rc == 0
+          - "'Hello' in cmd_result.stdout"
+        fail_msg: "Command did not succeed as expected"
+        success_msg: "Command output validated successfully"

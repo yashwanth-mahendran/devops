@@ -1,0 +1,22 @@
+---
+# Group variables for webservers
+
+# Application settings
+app_name: webapp
+app_port: 8080
+app_environment: production
+
+# System settings
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+
+# Security settings
+firewall_allowed_ports:
+  - 22
+  - 80
+  - 443
+
+# Monitoring
+enable_monitoring: true
+monitoring_port: 9090

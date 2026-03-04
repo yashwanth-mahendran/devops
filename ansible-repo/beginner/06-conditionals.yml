@@ -1,0 +1,64 @@
+---
+# Beginner Example 6: Conditionals
+# Using when statements for conditional execution
+
+- name: Conditionals Example
+  hosts: all
+  become: yes
+  
+  vars:
+    install_docker: true
+    environment: production
+  
+  tasks:
+    - name: Install package only on Ubuntu
+      apt:
+        name: apache2
+        state: present
+      when: ansible_distribution == "Ubuntu"
+    
+    - name: Install package only on CentOS
+      yum:
+        name: httpd
+        state: present
+      when: ansible_distribution == "CentOS"
+    
+    - name: Task runs only if variable is true
+      debug:
+        msg: "Docker installation enabled"
+      when: install_docker | bool
+    
+    - name: Multiple conditions (AND)
+      debug:
+        msg: "Production Ubuntu server"
+      when:
+        - ansible_distribution == "Ubuntu"
+        - environment == "production"
+    
+    - name: Multiple conditions (OR)
+      debug:
+        msg: "Either Ubuntu or Debian"
+      when: ansible_distribution == "Ubuntu" or ansible_distribution == "Debian"
+    
+    - name: Check if file exists
+      stat:
+        path: /etc/nginx/nginx.conf
+      register: nginx_conf
+    
+    - name: Task runs only if file exists
+      debug:
+        msg: "Nginx config found"
+      when: nginx_conf.stat.exists
+    
+    - name: Conditional based on command result
+      command: which docker
+      register: docker_check
+      ignore_errors: yes
+      changed_when: false
+    
+    - name: Install Docker if not present
+      debug:
+        msg: "Docker not found, would install"
+      when: docker_check.rc != 0
+
+# Run with: ansible-playbook beginner/06-conditionals.yml

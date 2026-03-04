@@ -1,0 +1,55 @@
+---
+# Database servers configuration playbook
+
+- name: Configure Database Servers
+  hosts: dbservers
+  become: yes
+  gather_facts: yes
+  serial: 1  # One at a time for safety
+
+  vars:
+    postgresql_version: 15
+
+  tasks:
+    - name: Install PostgreSQL
+      apt:
+        name:
+          - "postgresql-{{ postgresql_version }}"
+          - "postgresql-contrib-{{ postgresql_version }}"
+          - python3-psycopg2
+        state: present
+        update_cache: yes
+      tags: install
+
+    - name: Configure PostgreSQL
+      template:
+        src: postgresql.conf.j2
+        dest: "/etc/postgresql/{{ postgresql_version }}/main/postgresql.conf"
+        owner: postgres
+        group: postgres
+        mode: '0644'
+      notify: Restart PostgreSQL
+      tags: configure
+
+    - name: Configure pg_hba.conf
+      template:
+        src: pg_hba.conf.j2
+        dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+        owner: postgres
+        group: postgres
+        mode: '0640'
+      notify: Restart PostgreSQL
+      tags: configure
+
+    - name: Ensure PostgreSQL is running
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+      tags: service
+
+  handlers:
+    - name: Restart PostgreSQL
+      service:
+        name: postgresql
+        state: restarted

@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# Application: {{ app_name }}
+# Environment: {{ app_environment }}
+
+[app]
+name = {{ app_name }}
+port = {{ app_port }}
+workers = {{ app_workers }}
+environment = {{ app_environment }}
+
+[security]
+{% for ip in allowed_ips %}
+allowed_ip = {{ ip }}
+{% endfor %}
+
+[system]
+hostname = {{ ansible_hostname }}
+os = {{ ansible_distribution }} {{ ansible_distribution_version }}
+deployed_at = {{ ansible_date_time.iso8601 }}

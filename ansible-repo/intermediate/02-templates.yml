@@ -1,0 +1,49 @@
+---
+# Intermediate Example 2: Templates (Jinja2)
+# Using templates for dynamic configuration
+
+- name: Templates Example
+  hosts: webservers
+  become: yes
+  
+  vars:
+    app_name: myapp
+    app_port: 8080
+    app_workers: 4
+    app_environment: production
+    allowed_ips:
+      - 192.168.1.0/24
+      - 10.0.0.0/8
+  
+  tasks:
+    - name: Create app config from template
+      template:
+        src: templates/app.conf.j2
+        dest: /etc/myapp/app.conf
+        mode: '0644'
+      notify: restart app
+    
+    - name: Create nginx vhost from template
+      template:
+        src: templates/nginx-vhost.j2
+        dest: /etc/nginx/sites-available/{{ app_name }}
+      notify: reload nginx
+    
+    - name: Generate environment file
+      template:
+        src: templates/env.j2
+        dest: /opt/{{ app_name }}/.env
+        mode: '0600'
+  
+  handlers:
+    - name: restart app
+      service:
+        name: "{{ app_name }}"
+        state: restarted
+    
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded
+
+# Run with: ansible-playbook intermediate/02-templates.yml

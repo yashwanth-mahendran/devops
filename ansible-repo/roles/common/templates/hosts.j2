@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+# /etc/hosts configuration
+
+127.0.0.1   localhost
+::1         localhost ip6-localhost ip6-loopback
+
+# Hostname
+{{ ansible_default_ipv4.address | default('127.0.1.1') }}  {{ ansible_fqdn | default(inventory_hostname) }} {{ ansible_hostname | default(inventory_hostname) }}
+
+# Static host entries
+{% for host in groups['all'] %}
+{% if hostvars[host]['ansible_host'] is defined %}
+{{ hostvars[host]['ansible_host'] }}  {{ host }}
+{% endif %}
+{% endfor %}
+
+{% if common_extra_hosts is defined %}
+# Custom host entries
+{% for entry in common_extra_hosts %}
+{{ entry.ip }}  {{ entry.name }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,49 @@
+---
+# Beginner Example 5: Variables and Facts
+# Using variables and gathering facts
+
+- name: Variables and Facts
+  hosts: localhost
+  gather_facts: yes
+  
+  vars:
+    app_name: myapp
+    app_version: "1.0.0"
+    app_port: 8080
+    app_users:
+      - alice
+      - bob
+      - charlie
+  
+  tasks:
+    - name: Display variable
+      debug:
+        msg: "Application: {{ app_name }} v{{ app_version }}"
+    
+    - name: Display system facts
+      debug:
+        msg: |
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Hostname: {{ ansible_hostname }}
+          IP: {{ ansible_default_ipv4.address }}
+          CPU: {{ ansible_processor_vcpus }}
+          Memory: {{ ansible_memtotal_mb }} MB
+    
+    - name: Use variable in task
+      debug:
+        msg: "App will run on port {{ app_port }}"
+    
+    - name: Loop through list variable
+      debug:
+        msg: "User: {{ item }}"
+      loop: "{{ app_users }}"
+    
+    - name: Set fact dynamically
+      set_fact:
+        deployment_time: "{{ ansible_date_time.iso8601 }}"
+    
+    - name: Use custom fact
+      debug:
+        msg: "Deployed at: {{ deployment_time }}"
+
+# Run with: ansible-playbook beginner/05-variables.yml

@@ -1,0 +1,82 @@
+---
+# Default variables for webserver role
+
+# Package name
+nginx_package_name: nginx
+
+# Nginx paths
+nginx_conf_dir: /etc/nginx
+nginx_log_dir: /var/log/nginx
+nginx_ssl_dir: /etc/nginx/ssl
+
+# User/group
+nginx_user: www-data
+nginx_group: www-data
+
+# Ports
+nginx_http_port: 80
+nginx_https_port: 443
+
+# Worker configuration
+nginx_worker_processes: auto
+nginx_worker_connections: 1024
+
+# Logging
+nginx_access_log: "{{ nginx_log_dir }}/access.log"
+nginx_error_log: "{{ nginx_log_dir }}/error.log"
+nginx_log_format: main
+
+# Gzip
+nginx_enable_gzip: true
+nginx_gzip_types:
+  - text/plain
+  - text/css
+  - application/json
+  - application/javascript
+  - text/xml
+  - application/xml
+
+# SSL
+nginx_enable_ssl: false
+nginx_ssl_self_signed: true
+nginx_ssl_protocols: "TLSv1.2 TLSv1.3"
+nginx_ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
+nginx_ssl_prefer_server_ciphers: true
+nginx_ssl_session_cache: "shared:SSL:10m"
+nginx_ssl_session_timeout: "1d"
+
+# Default site
+nginx_remove_default_site: true
+nginx_default_root: /var/www
+
+# Virtual hosts
+nginx_vhosts: []
+  # - name: example
+  #   server_name: example.com
+  #   root: /var/www/example
+  #   index: index.html
+  #   enabled: true
+  #   ssl: false
+  #   deploy_default_page: true
+  #   locations:
+  #     - path: /
+  #       try_files: "$uri $uri/ =404"
+  #     - path: /api
+  #       proxy_pass: http://127.0.0.1:3000
+
+# Firewall
+nginx_configure_firewall: true
+
+# Proxy settings
+nginx_proxy_read_timeout: 60
+nginx_proxy_connect_timeout: 60
+nginx_proxy_send_timeout: 60
+
+# Client settings
+nginx_client_max_body_size: 10m
+nginx_client_body_buffer_size: 128k
+
+# Buffers
+nginx_proxy_buffer_size: 4k
+nginx_proxy_buffers: "4 32k"
+nginx_proxy_busy_buffers_size: 64k

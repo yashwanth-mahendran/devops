@@ -1,0 +1,23 @@
+---
+# Beginner Example 1: Hello World
+# This is the simplest Ansible playbook
+
+- name: Hello World Playbook
+  hosts: localhost
+  gather_facts: no
+  
+  tasks:
+    - name: Print hello world message
+      debug:
+        msg: "Hello, Ansible World!"
+    
+    - name: Display current date and time
+      debug:
+        msg: "Current time is {{ ansible_date_time.iso8601 }}"
+      when: ansible_date_time is defined
+    
+    - name: Show Ansible version
+      debug:
+        msg: "Running Ansible version {{ ansible_version.full }}"
+
+# Run with: ansible-playbook beginner/01-hello-world.yml

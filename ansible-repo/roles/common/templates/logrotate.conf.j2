@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+# Logrotate configuration
+
+{% for path in common_logrotate_paths %}
+{{ path }}
+{% endfor %}
+{
+    {% if common_logrotate_daily %}daily{% else %}weekly{% endif %}
+
+    rotate {{ common_logrotate_rotate }}
+    {% if common_logrotate_compress %}compress{% endif %}
+
+    missingok
+    notifempty
+    create 0644 root root
+    sharedscripts
+    postrotate
+        # Add any post-rotate commands here
+    endscript
+}

@@ -1,0 +1,190 @@
+---
+# 07-performance-optimization.yml
+# Advanced techniques for improving Ansible performance
+
+# ansible.cfg optimizations:
+# [defaults]
+# forks = 50                         # Parallel host execution
+# gathering = smart                   # Cache facts
+# fact_caching = jsonfile
+# fact_caching_connection = /tmp/ansible_facts
+# fact_caching_timeout = 86400
+# 
+# [ssh_connection]
+# pipelining = True                   # Reduce SSH operations
+# ssh_args = -o ControlMaster=auto -o ControlPersist=60s
+# control_path_dir = /tmp/ansible-ssh
+
+
+- name: Performance Optimization Techniques
+  hosts: all
+  gather_facts: no  # Disable if not needed
+  strategy: free    # Don't wait for slowest host
+
+  tasks:
+    # 1. Minimize fact gathering
+    - name: Gather only needed facts
+      setup:
+        gather_subset:
+          - network
+          - hardware
+        filter: ansible_*memory*  # Filter specific facts
+
+    # 2. Use async for parallel execution
+    - name: Parallel package installation
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - nginx
+        - redis
+        - postgresql
+      async: 300
+      poll: 0
+      register: package_jobs
+
+    - name: Wait for packages
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 30
+      delay: 10
+      loop: "{{ package_jobs.results }}"
+
+
+- name: Batch Operations
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    # 3. Use package manager's batch capability
+    - name: Install multiple packages at once
+      apt:
+        name:
+          - nginx
+          - redis-server
+          - postgresql
+          - python3-pip
+        state: present
+        update_cache: yes
+        cache_valid_time: 3600  # Don't update if cache is fresh
+
+    # 4. Reduce file operations with synchronize
+    - name: Sync directory efficiently
+      synchronize:
+        src: /local/path/
+        dest: /remote/path/
+        delete: yes
+        rsync_opts:
+          - "--compress"
+          - "--archive"
+
+
+- name: Efficient Data Handling
+  hosts: all
+  gather_facts: no
+
+  vars:
+    large_list: "{{ range(1000) | list }}"
+
+  tasks:
+    # 5. Use selectattr/json_query instead of loops
+    - name: Filter in Jinja2 instead of loop
+      set_fact:
+        filtered_items: "{{ large_list | select('lessthan', 10) | list }}"
+
+    # 6. Limit loop output
+    - name: Loop with limited output
+      debug:
+        msg: "Processing {{ item }}"
+      loop: "{{ large_list[:10] }}"
+      loop_control:
+        label: "item_{{ item }}"  # Reduce output verbosity
+
+    # 7. Use bulk operations
+    - name: Bulk user creation
+      user:
+        name: "{{ item }}"
+      loop: "{{ range(1, 10) | map('string') | map('regex_replace', '^', 'user') | list }}"
+
+
+- name: Caching Strategies
+  hosts: all
+  gather_facts: yes
+
+  tasks:
+    # 8. Use set_fact with cacheable
+    - name: Cache computed values
+      set_fact:
+        computed_value: "{{ ansible_memtotal_mb * 0.8 }}"
+        cacheable: yes
+
+
+- name: Mitogen Acceleration
+  hosts: all
+  gather_facts: no
+  # strategy: mitogen_linear  # Enable Mitogen (requires installation)
+
+  tasks:
+    # Mitogen can speed up Ansible 2-7x
+    # Installation:
+    # pip install mitogen
+    # 
+    # ansible.cfg:
+    # [defaults]
+    # strategy_plugins = /path/to/mitogen/ansible_mitogen/plugins/strategy
+    # strategy = mitogen_linear
+    
+    - name: Mitogen info
+      debug:
+        msg: |
+          Mitogen optimizations:
+          - Eliminates SSH connection overhead
+          - Reduces Python interpreter startup
+          - Compresses data transfer
+          - Maintains connection pooling
+
+
+- name: Serial Processing for Large Inventories
+  hosts: webservers
+  serial:
+    - 1           # First batch: 1 host (canary)
+    - 5           # Second batch: 5 hosts
+    - "25%"       # Third batch: 25% of remaining
+    - "100%"      # Final batch: all remaining
+  gather_facts: no
+
+  tasks:
+    - name: Gradual rollout
+      debug:
+        msg: "Deploying to {{ inventory_hostname }}"
+
+
+- name: Throttle Heavy Operations
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    # 9. Throttle resource-intensive tasks
+    - name: Heavy API call
+      uri:
+        url: https://api.example.com/heavy-operation
+        method: POST
+      throttle: 5  # Max 5 concurrent executions
+      register: api_result
+
+
+# Performance comparison checklist:
+# ┌─────────────────────────────────────────────┐
+# │ Optimization                    │ Impact    │
+# ├─────────────────────────────────────────────┤
+# │ pipelining = True               │ 10-20%    │
+# │ forks = 50                      │ 5-10x     │
+# │ gather_facts = no               │ 20-40%    │
+# │ strategy = free                 │ Variable  │
+# │ fact_caching                    │ 30-50%    │
+# │ Mitogen                         │ 2-7x      │
+# │ ControlPersist                  │ 10-30%    │
+# │ Batch package installs          │ 50-80%    │
+# └─────────────────────────────────────────────┘

@@ -1,0 +1,72 @@
+---
+# Security hardening tasks
+
+- name: Disable root login via SSH
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin no'
+    state: present
+    validate: 'sshd -t -f %s'
+  notify: restart sshd
+  when: common_disable_root_login | bool
+
+- name: Disable password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+    state: present
+    validate: 'sshd -t -f %s'
+  notify: restart sshd
+  when: common_disable_password_auth | bool
+
+- name: Configure SSH allowed users
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?AllowUsers'
+    line: "AllowUsers {{ common_ssh_allowed_users | join(' ') }}"
+    state: present
+    validate: 'sshd -t -f %s'
+  notify: restart sshd
+  when: common_ssh_allowed_users | length > 0
+
+- name: Install fail2ban
+  package:
+    name: fail2ban
+    state: present
+  when: common_install_fail2ban | bool
+
+- name: Configure fail2ban
+  template:
+    src: fail2ban-jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    mode: '0644'
+  notify: restart fail2ban
+  when: common_install_fail2ban | bool
+
+- name: Enable fail2ban
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes
+  when: common_install_fail2ban | bool
+
+- name: Configure UFW firewall
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: "{{ common_firewall_allowed_ports }}"
+  when:
+    - common_configure_firewall | bool
+    - ansible_os_family == "Debian"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+    policy: deny
+  when:
+    - common_configure_firewall | bool
+    - ansible_os_family == "Debian"

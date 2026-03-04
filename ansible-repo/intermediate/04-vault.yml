@@ -1,0 +1,32 @@
+---
+# Intermediate Example 4: Ansible Vault
+# Managing secrets securely
+
+- name: Vault Example
+  hosts: localhost
+  
+  vars_files:
+    - vars/secrets.yml
+  
+  tasks:
+    - name: Use encrypted variable
+      debug:
+        msg: "Database password is encrypted"
+    
+    - name: Connect to database
+      postgresql_db:
+        name: mydb
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_password }}"
+        state: present
+      no_log: true
+
+# Create encrypted file:
+# ansible-vault create vars/secrets.yml
+# ansible-vault edit vars/secrets.yml
+# ansible-vault encrypt vars/secrets.yml
+# ansible-vault decrypt vars/secrets.yml
+
+# Run with vault password:
+# ansible-playbook intermediate/04-vault.yml --ask-vault-pass
+# ansible-playbook intermediate/04-vault.yml --vault-password-file ~/.vault_pass

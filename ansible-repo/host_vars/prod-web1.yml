@@ -1,0 +1,33 @@
+---
+# Host-specific variables for prod-web1
+# These override group_vars for this specific host
+
+# Hostname
+ansible_host: 10.1.1.10
+hostname: prod-web1.example.com
+
+# Host-specific network settings
+primary_interface: eth0
+ip_address: 10.1.1.10
+gateway: 10.1.1.1
+
+# Host-specific resource tuning
+nginx_worker_processes: 4  # Based on this host's CPU count
+
+# Host roles within cluster
+is_primary_web: true
+accepts_cron_jobs: true
+
+# Host-specific application settings
+app_instance_id: web-01
+node_id: 1
+
+# Host-specific monitoring
+custom_metrics:
+  - name: app_queue_length
+    type: gauge
+
+# Any host-specific overrides
+extra_packages:
+  - strace
+  - tcpdump

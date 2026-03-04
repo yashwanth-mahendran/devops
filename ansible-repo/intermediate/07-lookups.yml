@@ -1,0 +1,139 @@
+---
+# 07-lookups.yml
+# Demonstrates lookup plugins for fetching data from external sources
+# Lookups run on the control node
+
+- name: Lookup Plugin Examples
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    # File lookup - read file content
+    ssh_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    
+    # Environment variable
+    home_dir: "{{ lookup('env', 'HOME') }}"
+    user: "{{ lookup('env', 'USER') }}"
+    
+    # Password generation
+    # random_password: "{{ lookup('password', '/dev/null length=16 chars=ascii_letters,digits') }}"
+    
+    # Get first match from list
+    config_file: "{{ lookup('first_found', ['config.yml', 'config.yaml', 'default.yml']) }}"
+
+  tasks:
+    - name: Display environment lookups
+      debug:
+        msg: |
+          Home: {{ home_dir }}
+          User: {{ user }}
+
+    # Template lookup
+    - name: Template lookup
+      debug:
+        msg: "{{ lookup('template', 'templates/greeting.j2') }}"
+
+    # Pipe lookup - run command
+    - name: Pipe lookup (run command)
+      debug:
+        msg: "Current date: {{ lookup('pipe', 'date +%Y-%m-%d') }}"
+
+    # Sequence lookup
+    - name: Generate sequence
+      debug:
+        msg: "{{ lookup('sequence', 'start=1 end=5 format=%02d') }}"
+
+    # Items lookup
+    - name: Iterate with lookup
+      debug:
+        msg: "Item: {{ item }}"
+      with_items: "{{ lookup('sequence', 'start=1 end=3', wantlist=True) }}"
+
+    # Lines lookup - read file lines
+    - name: Read file lines
+      debug:
+        msg: "Line: {{ item }}"
+      with_lines: cat /etc/hostname
+
+    # URL lookup (fetch from URL)
+    # - name: Fetch from URL
+    #   debug:
+    #     msg: "{{ lookup('url', 'https://api.example.com/data', split_lines=False) }}"
+
+    # Together lookup (zip lists)
+    - name: Zip lists together
+      debug:
+        msg: "{{ item.0 }} - {{ item.1 }}"
+      with_together:
+        - ['a', 'b', 'c']
+        - [1, 2, 3]
+
+    # Dict lookup
+    - name: Iterate dictionary
+      debug:
+        msg: "{{ item.key }}: {{ item.value }}"
+      with_dict:
+        name: "John"
+        age: 30
+
+    # Nested loops
+    - name: Nested loops
+      debug:
+        msg: "{{ item.0 }} - {{ item.1 }}"
+      with_nested:
+        - ['web', 'db']
+        - ['dev', 'prod']
+
+    # Subelements
+    - name: Subelements example
+      vars:
+        users:
+          - name: alice
+            groups: ['admin', 'dev']
+          - name: bob
+            groups: ['dev']
+      debug:
+        msg: "User {{ item.0.name }} in group {{ item.1 }}"
+      with_subelements:
+        - "{{ users }}"
+        - groups
+
+
+# AWS lookups (requires amazon.aws collection)
+# - name: AWS Lookups
+#   hosts: localhost
+#   tasks:
+#     - name: Get SSM parameter
+#       debug:
+#         msg: "{{ lookup('amazon.aws.aws_ssm', 'my-parameter') }}"
+#
+#     - name: Get secret from Secrets Manager
+#       debug:
+#         msg: "{{ lookup('amazon.aws.aws_secret', 'my-secret') }}"
+
+
+# HashiCorp Vault lookup
+# - name: Vault Lookups
+#   hosts: localhost
+#   tasks:
+#     - name: Get secret from Vault
+#       debug:
+#         msg: "{{ lookup('community.hashi_vault.vault_kv2_get', 'secret/data/myapp') }}"
+
+
+# Query vs Lookup
+# lookup returns string by default, query returns list
+- name: Query vs Lookup
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Using query (returns list)
+      debug:
+        var: item
+      loop: "{{ query('sequence', 'start=1 end=3') }}"
+
+    - name: Using lookup with wantlist
+      debug:
+        var: item
+      loop: "{{ lookup('sequence', 'start=1 end=3', wantlist=True) }}"

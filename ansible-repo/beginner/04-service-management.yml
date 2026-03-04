@@ -1,0 +1,39 @@
+---
+# Beginner Example 4: Service Management
+# Start, stop, and manage services
+
+- name: Service Management
+  hosts: webservers
+  become: yes
+  
+  tasks:
+    - name: Install nginx
+      package:
+        name: nginx
+        state: present
+    
+    - name: Start and enable nginx service
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+    
+    - name: Restart nginx service
+      service:
+        name: nginx
+        state: restarted
+    
+    - name: Check if service is running
+      service_facts:
+    
+    - name: Display nginx status
+      debug:
+        msg: "Nginx is {{ ansible_facts.services['nginx.service'].state }}"
+      when: "'nginx.service' in ansible_facts.services"
+    
+    - name: Reload nginx configuration
+      service:
+        name: nginx
+        state: reloaded
+
+# Run with: ansible-playbook beginner/04-service-management.yml

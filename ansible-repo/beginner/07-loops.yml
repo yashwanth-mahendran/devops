@@ -1,0 +1,62 @@
+---
+# Beginner Example 7: Loops
+# Different types of loops in Ansible
+
+- name: Loops Example
+  hosts: localhost
+  become: yes
+  
+  vars:
+    packages:
+      - vim
+      - git
+      - curl
+    
+    users:
+      - name: alice
+        uid: 1001
+      - name: bob
+        uid: 1002
+      - name: charlie
+        uid: 1003
+    
+    services:
+      - nginx
+      - docker
+  
+  tasks:
+    - name: Simple loop with list
+      debug:
+        msg: "Package: {{ item }}"
+      loop: "{{ packages }}"
+    
+    - name: Loop with dictionary
+      debug:
+        msg: "User {{ item.name }} has UID {{ item.uid }}"
+      loop: "{{ users }}"
+    
+    - name: Loop with index
+      debug:
+        msg: "Item {{ index }}: {{ item }}"
+      loop: "{{ packages }}"
+      loop_control:
+        index_var: index
+    
+    - name: Loop with range
+      debug:
+        msg: "Number: {{ item }}"
+      loop: "{{ range(1, 6) | list }}"
+    
+    - name: Loop with until (retry logic)
+      shell: echo "Attempt {{ ansible_loop.index }}"
+      register: result
+      until: result.rc == 0
+      retries: 3
+      delay: 2
+    
+    - name: Nested loops
+      debug:
+        msg: "Service {{ item.0 }} on host {{ item.1 }}"
+      loop: "{{ services | product(['web1', 'web2']) | list }}"
+
+# Run with: ansible-playbook beginner/07-loops.yml

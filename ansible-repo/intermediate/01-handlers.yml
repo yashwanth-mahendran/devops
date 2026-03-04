@@ -1,0 +1,51 @@
+---
+# Intermediate Example 1: Handlers
+# Using handlers for service restarts
+
+- name: Handlers Example
+  hosts: webservers
+  become: yes
+  
+  tasks:
+    - name: Install nginx
+      package:
+        name: nginx
+        state: present
+      notify: restart nginx
+    
+    - name: Copy nginx configuration
+      copy:
+        content: |
+          server {
+            listen 80;
+            server_name example.com;
+            root /var/www/html;
+          }
+        dest: /etc/nginx/sites-available/default
+      notify:
+        - validate nginx config
+        - reload nginx
+    
+    - name: Update nginx main config
+      lineinfile:
+        path: /etc/nginx/nginx.conf
+        regexp: '^worker_processes'
+        line: 'worker_processes auto;'
+      notify: restart nginx
+  
+  handlers:
+    - name: restart nginx
+      service:
+        name: nginx
+        state: restarted
+    
+    - name: reload nginx
+      service:
+        name: nginx
+        state: reloaded
+    
+    - name: validate nginx config
+      command: nginx -t
+      changed_when: false
+
+# Run with: ansible-playbook intermediate/01-handlers.yml

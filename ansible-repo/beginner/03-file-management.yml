@@ -1,0 +1,50 @@
+---
+# Beginner Example 3: File Management
+# Create, copy, and manage files
+
+- name: File Management Examples
+  hosts: all
+  become: yes
+  
+  tasks:
+    - name: Create a directory
+      file:
+        path: /opt/myapp
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+    
+    - name: Create a file with content
+      copy:
+        content: |
+          # Application Configuration
+          APP_NAME=myapp
+          APP_ENV=production
+        dest: /opt/myapp/config.env
+        mode: '0644'
+    
+    - name: Copy file from local to remote
+      copy:
+        src: files/app.conf
+        dest: /opt/myapp/app.conf
+        backup: yes
+    
+    - name: Create symbolic link
+      file:
+        src: /opt/myapp/config.env
+        dest: /etc/myapp.conf
+        state: link
+    
+    - name: Set file permissions
+      file:
+        path: /opt/myapp
+        mode: '0755'
+        recurse: yes
+    
+    - name: Remove a file
+      file:
+        path: /tmp/oldfile
+        state: absent
+
+# Run with: ansible-playbook beginner/03-file-management.yml

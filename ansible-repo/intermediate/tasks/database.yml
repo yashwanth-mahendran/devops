@@ -1,0 +1,14 @@
+---
+# Database tasks
+# Include with: include_tasks: tasks/database.yml
+
+- name: Install PostgreSQL
+  package:
+    name: postgresql
+    state: present
+
+- name: Start PostgreSQL
+  service:
+    name: postgresql
+    state: started
+    enabled: yes

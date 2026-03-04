@@ -1,0 +1,43 @@
+---
+# Beginner Example 2: Package Installation
+# Install packages on target systems
+
+- name: Install Common Packages
+  hosts: all
+  become: yes
+  
+  tasks:
+    - name: Update apt cache (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+    
+    - name: Install basic packages on Debian/Ubuntu
+      apt:
+        name:
+          - vim
+          - git
+          - curl
+          - wget
+          - htop
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Install basic packages on RedHat/CentOS
+      yum:
+        name:
+          - vim
+          - git
+          - curl
+          - wget
+          - htop
+        state: present
+      when: ansible_os_family == "RedHat"
+    
+    - name: Ensure package is latest version
+      package:
+        name: git
+        state: latest
+
+# Run with: ansible-playbook beginner/02-package-install.yml

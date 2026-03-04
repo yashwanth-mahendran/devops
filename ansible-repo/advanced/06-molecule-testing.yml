@@ -1,0 +1,183 @@
+---
+# 06-molecule-testing.yml
+# Guide to testing Ansible roles with Molecule
+
+# This playbook serves as documentation for Molecule testing
+
+- name: Molecule Testing Guide
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Molecule Overview
+      debug:
+        msg: |
+          Molecule is a testing framework for Ansible roles.
+          
+          Installation:
+            pip install molecule molecule-docker ansible-lint yamllint
+          
+          Initialize role with Molecule:
+            molecule init role my_role
+          
+          Add Molecule to existing role:
+            cd roles/my_role
+            molecule init scenario
+          
+          Run tests:
+            molecule test              # Full test cycle
+            molecule create            # Create instances
+            molecule converge          # Run playbook
+            molecule verify            # Run tests
+            molecule destroy           # Destroy instances
+            molecule login             # SSH into instance
+
+
+# molecule.yml structure:
+# ---
+# dependency:
+#   name: galaxy
+#   options:
+#     requirements-file: requirements.yml
+#
+# driver:
+#   name: docker
+#
+# platforms:
+#   - name: instance
+#     image: ubuntu:22.04
+#     pre_build_image: true
+#     privileged: true
+#     command: /sbin/init
+#
+# provisioner:
+#   name: ansible
+#   playbooks:
+#     prepare: prepare.yml
+#     converge: converge.yml
+#     verify: verify.yml
+#   inventory:
+#     host_vars:
+#       instance:
+#         ansible_user: root
+#
+# verifier:
+#   name: ansible
+#
+# scenario:
+#   name: default
+#   test_sequence:
+#     - dependency
+#     - lint
+#     - cleanup
+#     - destroy
+#     - syntax
+#     - create
+#     - prepare
+#     - converge
+#     - idempotence
+#     - side_effect
+#     - verify
+#     - cleanup
+#     - destroy
+
+
+# converge.yml (molecule/default/):
+# ---
+# - name: Converge
+#   hosts: all
+#   become: true
+#   roles:
+#     - role: my_role
+#       vars:
+#         my_var: value
+
+
+# verify.yml (molecule/default/):
+# ---
+# - name: Verify
+#   hosts: all
+#   gather_facts: false
+#   tasks:
+#     - name: Check if nginx is installed
+#       command: which nginx
+#       register: nginx_check
+#       changed_when: false
+#       failed_when: nginx_check.rc != 0
+#
+#     - name: Verify nginx is running
+#       service:
+#         name: nginx
+#         state: started
+#       check_mode: true
+#       register: nginx_status
+#       failed_when: nginx_status.changed
+
+
+# Alternative: Using Testinfra with Molecule
+# tests/test_default.py:
+# 
+# import os
+# import testinfra.utils.ansible_runner
+# 
+# testinfra_hosts = testinfra.utils.ansible_runner.AnsibleRunner(
+#     os.environ['MOLECULE_INVENTORY_FILE']
+# ).get_hosts('all')
+# 
+# def test_nginx_is_installed(host):
+#     nginx = host.package("nginx")
+#     assert nginx.is_installed
+# 
+# def test_nginx_running_and_enabled(host):
+#     nginx = host.service("nginx")
+#     assert nginx.is_running
+#     assert nginx.is_enabled
+# 
+# def test_nginx_listening(host):
+#     socket = host.socket("tcp://0.0.0.0:80")
+#     assert socket.is_listening
+# 
+# def test_nginx_config(host):
+#     config = host.file("/etc/nginx/nginx.conf")
+#     assert config.exists
+#     assert config.user == "root"
+
+
+# CI/CD Integration (.github/workflows/molecule.yml):
+# ---
+# name: Molecule Test
+# on: [push, pull_request]
+# jobs:
+#   molecule:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Set up Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: '3.11'
+#       - name: Install dependencies
+#         run: |
+#           pip install molecule molecule-docker ansible-lint yamllint
+#       - name: Run Molecule tests
+#         run: molecule test
+#         working-directory: roles/my_role
+
+
+# Multiple scenarios:
+# roles/my_role/molecule/
+# ├── default/          # Default scenario with Docker
+# │   ├── molecule.yml
+# │   ├── converge.yml
+# │   └── verify.yml
+# ├── vagrant/          # Scenario using Vagrant
+# │   ├── molecule.yml
+# │   ├── converge.yml
+# │   └── verify.yml
+# └── podman/           # Scenario using Podman
+#     ├── molecule.yml
+#     ├── converge.yml
+#     └── verify.yml
+#
+# Run specific scenario:
+# molecule test -s vagrant

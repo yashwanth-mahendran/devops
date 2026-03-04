@@ -1,0 +1,27 @@
+---
+# Common tasks included by playbooks
+# Include with: include_tasks: tasks/common.yml
+
+- name: Update package cache (Debian)
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Update package cache (RedHat)
+  yum:
+    update_cache: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Install common packages
+  package:
+    name:
+      - vim
+      - curl
+      - wget
+      - git
+    state: present
+
+- name: Set timezone
+  timezone:
+    name: "{{ timezone | default('UTC') }}"

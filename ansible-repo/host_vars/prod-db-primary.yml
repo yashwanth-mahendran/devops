@@ -1,0 +1,44 @@
+---
+# Host-specific variables for prod-db-primary
+# Database primary server configuration
+
+ansible_host: 10.1.2.10
+hostname: prod-db-primary.example.com
+
+# Database role
+db_role: primary
+is_primary: true
+accepts_writes: true
+
+# Replication configuration (as master)
+postgresql_replication_enabled: true
+postgresql_wal_level: replica
+postgresql_max_wal_senders: 10
+postgresql_synchronous_standby_names: "'prod-db-replica1,prod-db-replica2'"
+
+# Resource allocation (primary gets more resources)
+postgresql_shared_buffers: "4GB"
+postgresql_effective_cache_size: "12GB"
+postgresql_max_connections: 500
+
+# Backup (primary does the backups)
+backup_enabled: true
+backup_schedule: "0 */6 * * *"  # Every 6 hours
+
+# Monitoring
+enable_pg_stat_statements: true
+log_connections: true
+log_disconnections: true
+
+# Network
+primary_interface: eth0
+ip_address: 10.1.2.10
+
+# Cluster configuration
+cluster_name: prod-db-cluster
+cluster_role: master
+replication_slots:
+  - name: replica1_slot
+    type: physical
+  - name: replica2_slot
+    type: physical

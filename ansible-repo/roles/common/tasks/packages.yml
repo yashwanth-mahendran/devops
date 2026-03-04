@@ -1,0 +1,37 @@
+---
+# Package management tasks
+
+- name: Update package cache (Debian)
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Update package cache (RedHat)
+  yum:
+    update_cache: yes
+  when: ansible_os_family == "RedHat"
+
+- name: Install common packages
+  package:
+    name: "{{ common_packages }}"
+    state: present
+
+- name: Install OS-specific packages
+  package:
+    name: "{{ common_packages_os_specific }}"
+    state: present
+  when: common_packages_os_specific | length > 0
+
+- name: Remove unwanted packages
+  package:
+    name: "{{ common_packages_removed }}"
+    state: absent
+  when: common_packages_removed | length > 0
+
+- name: Upgrade all packages
+  package:
+    name: "*"
+    state: latest
+  when: common_upgrade_packages | bool
+  tags: upgrade

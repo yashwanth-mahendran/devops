@@ -1,0 +1,72 @@
+# {{ ansible_managed }}
+# Main Nginx configuration
+
+user {{ nginx_user }};
+worker_processes {{ nginx_worker_processes }};
+pid /run/nginx.pid;
+
+error_log {{ nginx_error_log }} warn;
+
+events {
+    worker_connections {{ nginx_worker_connections }};
+    multi_accept on;
+    use epoll;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging format
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    log_format json escape=json '{'
+        '"time":"$time_iso8601",'
+        '"remote_addr":"$remote_addr",'
+        '"method":"$request_method",'
+        '"uri":"$request_uri",'
+        '"status":$status,'
+        '"body_bytes_sent":$body_bytes_sent,'
+        '"request_time":$request_time,'
+        '"http_referrer":"$http_referer",'
+        '"http_user_agent":"$http_user_agent"'
+    '}';
+
+    access_log {{ nginx_access_log }} {{ nginx_log_format }};
+
+    # Basic settings
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    server_tokens off;
+
+    # Client settings
+    client_max_body_size {{ nginx_client_max_body_size }};
+    client_body_buffer_size {{ nginx_client_body_buffer_size }};
+
+{% if nginx_enable_gzip %}
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types {{ nginx_gzip_types | join(' ') }};
+{% endif %}
+
+    # SSL settings (actual certs configured per vhost)
+{% if nginx_enable_ssl %}
+    ssl_protocols {{ nginx_ssl_protocols }};
+    ssl_ciphers {{ nginx_ssl_ciphers }};
+    ssl_prefer_server_ciphers {{ 'on' if nginx_ssl_prefer_server_ciphers else 'off' }};
+    ssl_session_cache {{ nginx_ssl_session_cache }};
+    ssl_session_timeout {{ nginx_ssl_session_timeout }};
+{% endif %}
+
+    # Include additional configurations
+    include {{ nginx_conf_dir }}/conf.d/*.conf;
+    include {{ nginx_conf_dir }}/sites-enabled/*.conf;
+}

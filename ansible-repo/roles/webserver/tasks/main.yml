@@ -1,0 +1,107 @@
+---
+# Webserver role - Nginx installation and configuration
+
+- name: Include OS-specific variables
+  include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution | lower }}.yml"
+    - "{{ ansible_os_family | lower }}.yml"
+    - default.yml
+
+- name: Install Nginx
+  package:
+    name: "{{ nginx_package_name }}"
+    state: present
+  notify: restart nginx
+
+- name: Create Nginx directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ nginx_conf_dir }}"
+    - "{{ nginx_conf_dir }}/sites-available"
+    - "{{ nginx_conf_dir }}/sites-enabled"
+    - "{{ nginx_conf_dir }}/conf.d"
+    - "{{ nginx_log_dir }}"
+    - "{{ nginx_ssl_dir }}"
+
+- name: Configure main nginx.conf
+  template:
+    src: nginx.conf.j2
+    dest: "{{ nginx_conf_dir }}/nginx.conf"
+    owner: root
+    group: root
+    mode: '0644'
+    validate: "nginx -t -c %s"
+  notify: reload nginx
+
+- name: Remove default site
+  file:
+    path: "{{ nginx_conf_dir }}/sites-enabled/default"
+    state: absent
+  when: nginx_remove_default_site | bool
+  notify: reload nginx
+
+- name: Configure virtual hosts
+  template:
+    src: vhost.conf.j2
+    dest: "{{ nginx_conf_dir }}/sites-available/{{ item.name }}.conf"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ nginx_vhosts }}"
+  notify: reload nginx
+
+- name: Enable virtual hosts
+  file:
+    src: "{{ nginx_conf_dir }}/sites-available/{{ item.name }}.conf"
+    dest: "{{ nginx_conf_dir }}/sites-enabled/{{ item.name }}.conf"
+    state: link
+  loop: "{{ nginx_vhosts }}"
+  when: item.enabled | default(true) | bool
+  notify: reload nginx
+
+- name: Create web root directories
+  file:
+    path: "{{ item.root | default(nginx_default_root + '/' + item.name) }}"
+    state: directory
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: '0755'
+  loop: "{{ nginx_vhosts }}"
+
+- name: Deploy default index page
+  template:
+    src: index.html.j2
+    dest: "{{ item.root | default(nginx_default_root + '/' + item.name) }}/index.html"
+    owner: "{{ nginx_user }}"
+    group: "{{ nginx_group }}"
+    mode: '0644'
+  loop: "{{ nginx_vhosts }}"
+  when: item.deploy_default_page | default(false) | bool
+
+- name: Configure SSL certificates
+  include_tasks: ssl.yml
+  when: nginx_enable_ssl | bool
+
+- name: Ensure Nginx is started and enabled
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Open firewall ports
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "{{ nginx_http_port | string }}"
+    - "{{ nginx_https_port | string }}"
+  when:
+    - nginx_configure_firewall | bool
+    - ansible_os_family == "Debian"

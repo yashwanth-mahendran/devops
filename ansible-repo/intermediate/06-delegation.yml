@@ -1,0 +1,118 @@
+---
+# 06-delegation.yml
+# Demonstrates task delegation and local actions
+
+- name: Delegation Patterns
+  hosts: webservers
+  gather_facts: no
+
+  tasks:
+    # Run a task on a different host
+    - name: Add server to load balancer (run on lb host)
+      debug:
+        msg: "Adding {{ inventory_hostname }} to load balancer"
+      delegate_to: loadbalancer
+
+    # Run task locally (on control node)
+    - name: Run task on control node
+      command: echo "Running on control node for {{ inventory_hostname }}"
+      delegate_to: localhost
+
+    # Shortcut for localhost delegation
+    - name: Run local command
+      local_action:
+        module: command
+        cmd: echo "Local action for {{ inventory_hostname }}"
+
+    # Poll external service from control node
+    - name: Check external service
+      uri:
+        url: "http://{{ inventory_hostname }}/health"
+        return_content: yes
+      delegate_to: localhost
+
+    # Run once across all hosts (useful for setup tasks)
+    - name: Create shared resource (only once)
+      debug:
+        msg: "Creating shared resource"
+      run_once: true
+
+    # Delegate with facts from target host
+    - name: Update DNS with target IP
+      debug:
+        msg: "Updating DNS: {{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] | default('N/A') }}"
+      delegate_to: dnsserver
+      delegate_facts: false  # Don't set facts on delegate
+
+    # Delegate and gather facts on delegated host
+    - name: Gather facts from load balancer
+      setup:
+      delegate_to: loadbalancer
+      delegate_facts: true  # Facts go to loadbalancer
+
+
+# Practical example: Rolling deployment with load balancer
+- name: Rolling Deployment
+  hosts: webservers
+  serial: 1  # One host at a time
+  gather_facts: no
+
+  tasks:
+    - name: Remove from load balancer
+      debug:
+        msg: "Removing {{ inventory_hostname }} from LB pool"
+      delegate_to: loadbalancer
+
+    - name: Wait for connections to drain
+      pause:
+        seconds: 10
+
+    - name: Deploy application
+      debug:
+        msg: "Deploying to {{ inventory_hostname }}"
+
+    - name: Health check
+      debug:
+        msg: "Checking {{ inventory_hostname }} health"
+      register: health
+      # uri:
+      #   url: "http://{{ inventory_hostname }}/health"
+      delegate_to: localhost
+
+    - name: Add back to load balancer
+      debug:
+        msg: "Adding {{ inventory_hostname }} back to LB pool"
+      delegate_to: loadbalancer
+
+
+# Wait for host to come online after reboot
+- name: Reboot and Wait
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: Reboot the server
+      reboot:
+        reboot_timeout: 600
+
+    # Alternative: wait_for_connection
+    - name: Wait for host to come back
+      wait_for_connection:
+        delay: 30
+        timeout: 300
+
+    # Or wait for specific port
+    - name: Wait for SSH to be available
+      wait_for:
+        host: "{{ ansible_host | default(inventory_hostname) }}"
+        port: 22
+        delay: 10
+        timeout: 300
+      delegate_to: localhost
+
+
+# Interview tip: Delegation is useful for:
+# 1. Load balancer management during deployments
+# 2. API calls from control node
+# 3. Cross-host orchestration
+# 4. run_once for one-time setup tasks

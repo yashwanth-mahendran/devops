@@ -1,0 +1,26 @@
+---
+# Role metadata
+
+galaxy_info:
+  author: Your Name
+  description: Nginx webserver installation and configuration
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - web
+    - nginx
+    - webserver
+    - proxy
+
+dependencies:
+  - role: common
+    when: webserver_include_common | default(true)

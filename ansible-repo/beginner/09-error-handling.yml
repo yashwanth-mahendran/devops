@@ -1,0 +1,130 @@
+---
+# 09-error-handling.yml
+# Demonstrates error handling patterns in Ansible
+
+- name: Error Handling Patterns
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    # 1. ignore_errors - Continue even if task fails
+    - name: This task will fail but be ignored
+      command: /bin/false
+      ignore_errors: yes
+
+    - name: This task runs even after previous failure
+      debug:
+        msg: "Previous failure was ignored"
+
+    # 2. failed_when - Custom failure conditions
+    - name: Check application status
+      shell: echo "STATUS: OK"
+      register: app_status
+      failed_when: "'ERROR' in app_status.stdout"
+
+    - name: Custom failure with multiple conditions
+      shell: exit 0
+      register: result
+      failed_when:
+        - result.rc != 0
+        - "'CRITICAL' in result.stderr"
+
+    # 3. changed_when - Control when task reports changed
+    - name: Check something (never changed)
+      command: echo "checking..."
+      register: check_result
+      changed_when: false  # Never report as changed
+
+    - name: Custom changed condition
+      shell: echo "updated"
+      register: update_result
+      changed_when: "'updated' in update_result.stdout"
+
+    # 4. Block, rescue, always - Try/catch/finally pattern
+    - name: Error handling with block
+      block:
+        - name: Try risky operation
+          command: /bin/true
+          register: risky_result
+
+        - name: This runs if previous succeeds
+          debug:
+            msg: "Risky operation succeeded"
+
+      rescue:
+        - name: This runs if block fails
+          debug:
+            msg: "Block failed, running recovery"
+
+        - name: Recovery action
+          command: echo "recovering..."
+
+      always:
+        - name: This always runs
+          debug:
+            msg: "Cleanup/notification (always runs)"
+
+    # 5. assert - Validate conditions
+    - name: Set variables for assertion
+      set_fact:
+        http_port: 80
+        environment: production
+
+    - name: Assert conditions
+      assert:
+        that:
+          - http_port == 80
+          - environment in ['development', 'staging', 'production']
+        fail_msg: "Validation failed"
+        success_msg: "All validations passed"
+
+    # 6. fail - Explicitly fail playbook
+    - name: Check environment
+      set_fact:
+        dangerous_operation: false
+
+    - name: Fail if dangerous operation in production
+      fail:
+        msg: "Cannot perform dangerous operation in production!"
+      when: 
+        - dangerous_operation | bool
+        - environment == "production"
+
+    # 7. any_errors_fatal example (set at play level)
+    - name: Critical operation
+      command: echo "critical task"
+      # If this fails, all hosts stop
+
+    # 8. max_fail_percentage example (set at play level)
+    # Continues as long as failure rate stays below threshold
+
+
+# Play demonstrating any_errors_fatal
+- name: Critical Deployment (All or Nothing)
+  hosts: all
+  any_errors_fatal: true  # Stop entire play on first failure
+  gather_facts: no
+
+  tasks:
+    - name: Critical database migration
+      command: echo "migrating..."
+
+    - name: If migration fails anywhere, stop everything
+      debug:
+        msg: "Migration completed"
+
+
+# Play demonstrating max_fail_percentage
+- name: Tolerant Deployment
+  hosts: all
+  max_fail_percentage: 30  # Continue if <30% hosts fail
+  serial: 2  # Process 2 hosts at a time
+  gather_facts: no
+
+  tasks:
+    - name: Deploy with tolerance
+      command: echo "deploying..."
+
+    - name: Deployment info
+      debug:
+        msg: "Deployed successfully"

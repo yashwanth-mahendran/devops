@@ -1,0 +1,22 @@
+---
+# Web servers configuration playbook
+
+- name: Configure Web Servers
+  hosts: webservers
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - role: webserver
+      tags: web
+
+  post_tasks:
+    - name: Verify nginx is running
+      uri:
+        url: "http://localhost:{{ nginx_http_port | default(80) }}/health"
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 5
+      delay: 3
+      tags: verify

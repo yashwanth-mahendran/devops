@@ -1,0 +1,43 @@
+---
+# Load balancer configuration playbook
+
+- name: Configure Load Balancers
+  hosts: loadbalancers
+  become: yes
+  gather_facts: yes
+
+  vars:
+    haproxy_frontend_port: 80
+    haproxy_stats_port: 8404
+
+  tasks:
+    - name: Install HAProxy
+      apt:
+        name: haproxy
+        state: present
+        update_cache: yes
+      tags: install
+
+    - name: Configure HAProxy
+      template:
+        src: haproxy.cfg.j2
+        dest: /etc/haproxy/haproxy.cfg
+        owner: root
+        group: root
+        mode: '0644'
+        validate: haproxy -c -f %s
+      notify: Reload HAProxy
+      tags: configure
+
+    - name: Enable HAProxy
+      service:
+        name: haproxy
+        state: started
+        enabled: yes
+      tags: service
+
+  handlers:
+    - name: Reload HAProxy
+      service:
+        name: haproxy
+        state: reloaded

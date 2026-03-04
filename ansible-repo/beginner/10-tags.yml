@@ -1,0 +1,90 @@
+---
+# 10-tags.yml
+# Demonstrates using tags to selectively run tasks
+# Run specific tags: ansible-playbook 10-tags.yml --tags "config"
+# Skip tags: ansible-playbook 10-tags.yml --skip-tags "slow"
+# List tags: ansible-playbook 10-tags.yml --list-tags
+
+- name: Working with Tags
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    # Single tag
+    - name: Install packages
+      debug:
+        msg: "Installing packages..."
+      tags: install
+
+    # Multiple tags
+    - name: Configure application
+      debug:
+        msg: "Configuring application..."
+      tags:
+        - config
+        - setup
+
+    # Always run (even with --tags)
+    - name: Always run this task
+      debug:
+        msg: "This always runs"
+      tags: always
+
+    # Never run (unless explicitly specified)
+    - name: Dangerous cleanup
+      debug:
+        msg: "Dangerous cleanup operation"
+      tags: never
+
+    - name: Fast operation
+      debug:
+        msg: "Fast operation"
+      tags:
+        - fast
+        - quick
+
+    - name: Slow operation
+      debug:
+        msg: "Slow operation - takes time"
+      tags: slow
+
+    # Block-level tags (applies to all tasks in block)
+    - name: Database operations
+      tags: database
+      block:
+        - name: Backup database
+          debug:
+            msg: "Backing up database..."
+
+        - name: Migrate database
+          debug:
+            msg: "Running migrations..."
+
+        - name: Validate database
+          debug:
+            msg: "Validating database..."
+
+    # Combining with roles
+    # - role: webserver
+    #   tags: web
+
+    # Special tags
+    - name: Show tagged tasks info
+      debug:
+        msg: |
+          Special tags:
+          - always: Always runs even with --tags
+          - never: Never runs unless explicitly tagged
+          - tagged: Run only tagged tasks
+          - untagged: Run only untagged tasks
+          - all: Run all tasks (default)
+      tags: info
+
+
+# Usage examples:
+# ansible-playbook 10-tags.yml --tags install           # Run only install tasks
+# ansible-playbook 10-tags.yml --tags "config,database" # Run multiple tags
+# ansible-playbook 10-tags.yml --skip-tags slow         # Skip slow tasks
+# ansible-playbook 10-tags.yml --tags tagged            # Only tagged tasks
+# ansible-playbook 10-tags.yml --tags untagged          # Only untagged tasks
+# ansible-playbook 10-tags.yml --list-tags              # List all tags

@@ -1,0 +1,55 @@
+---
+# Group variables for production environment
+# Applied to all hosts in the 'production' group
+
+environment: production
+env_short: prod
+
+# Deployment settings
+deploy_user: deploy
+deploy_timeout: 600
+rolling_update_batch_size: 1
+max_fail_percentage: 0
+
+# Resource allocation (production gets more resources)
+nginx_worker_connections: 8192
+postgresql_max_connections: 500
+
+# Security (stricter in production)
+ssh_allowed_ips:
+  - 10.0.0.0/8
+  - 192.168.0.0/16
+
+# SSL Configuration
+ssl_certificate_path: /etc/ssl/certs/production.crt
+ssl_key_path: /etc/ssl/private/production.key
+ssl_force_redirect: true
+
+# Monitoring (more verbose in production)
+enable_detailed_monitoring: true
+monitoring_interval: 30
+alert_thresholds:
+  cpu_percent: 80
+  memory_percent: 85
+  disk_percent: 90
+
+# Backup (more frequent in production)
+backup_frequency: hourly
+backup_retention_days: 90
+
+# Logging (more detailed in production)
+log_level: info
+enable_audit_log: true
+log_retention_days: 365
+
+# Load balancer settings
+lb_health_check_interval: 10
+lb_health_check_threshold: 2
+
+# High availability
+enable_ha: true
+min_healthy_instances: 2
+
+# Feature flags
+enable_debug_endpoints: false
+enable_maintenance_mode: false

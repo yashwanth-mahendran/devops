@@ -1,0 +1,174 @@
+---
+# 05-custom-modules.yml
+# Demonstrates creating and using custom modules
+
+# Custom Module Location:
+# - ./library/ (in playbook directory)
+# - ~/.ansible/plugins/modules/
+# - /usr/share/ansible/plugins/modules/
+# - Configured in ansible.cfg
+
+- name: Custom Module Examples
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    # Example 1: Using a simple custom module
+    # The module file would be in library/my_module.py
+    - name: Use custom module
+      my_module:
+        name: test
+        state: present
+      register: result
+
+    - name: Show result
+      debug:
+        var: result
+
+
+# Example Custom Module (library/my_module.py):
+# 
+# #!/usr/bin/python
+# from ansible.module_utils.basic import AnsibleModule
+# 
+# def run_module():
+#     module_args = dict(
+#         name=dict(type='str', required=True),
+#         state=dict(type='str', default='present', choices=['present', 'absent']),
+#         force=dict(type='bool', default=False)
+#     )
+# 
+#     result = dict(
+#         changed=False,
+#         message='',
+#         original_message='',
+#     )
+# 
+#     module = AnsibleModule(
+#         argument_spec=module_args,
+#         supports_check_mode=True
+#     )
+# 
+#     # Check mode support
+#     if module.check_mode:
+#         module.exit_json(**result)
+# 
+#     # Module logic here
+#     name = module.params['name']
+#     state = module.params['state']
+# 
+#     # Simulate work
+#     result['changed'] = True
+#     result['message'] = f'Processed {name} with state {state}'
+#     result['original_message'] = name
+# 
+#     module.exit_json(**result)
+# 
+# def main():
+#     run_module()
+# 
+# if __name__ == '__main__':
+#     main()
+
+
+# Example 2: Custom Filter Plugin
+# Location: filter_plugins/my_filters.py
+
+- name: Custom Filter Demo
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    my_data: "hello world"
+
+  tasks:
+    - name: Use custom filter
+      debug:
+        msg: "{{ my_data | my_custom_filter }}"
+
+
+# Example Filter Plugin (filter_plugins/my_filters.py):
+#
+# class FilterModule:
+#     def filters(self):
+#         return {
+#             'my_custom_filter': self.my_custom_filter,
+#             'to_snake_case': self.to_snake_case,
+#         }
+# 
+#     def my_custom_filter(self, value):
+#         return value.upper() + "!!!"
+# 
+#     def to_snake_case(self, value):
+#         import re
+#         s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', value)
+#         return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+
+# Example 3: Custom Lookup Plugin
+# Location: lookup_plugins/my_lookup.py
+
+- name: Custom Lookup Demo
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Use custom lookup
+      debug:
+        msg: "{{ lookup('my_lookup', 'some_key') }}"
+
+
+# Example Lookup Plugin (lookup_plugins/my_lookup.py):
+#
+# from ansible.plugins.lookup import LookupBase
+# from ansible.errors import AnsibleError
+# 
+# class LookupModule(LookupBase):
+#     def run(self, terms, variables=None, **kwargs):
+#         results = []
+#         for term in terms:
+#             # Custom logic here
+#             results.append(f"looked_up_{term}")
+#         return results
+
+
+# Example 4: Custom Callback Plugin
+# Location: callback_plugins/my_callback.py
+
+# Example Callback Plugin (callback_plugins/my_callback.py):
+#
+# from ansible.plugins.callback import CallbackBase
+# 
+# class CallbackModule(CallbackBase):
+#     CALLBACK_VERSION = 2.0
+#     CALLBACK_TYPE = 'notification'
+#     CALLBACK_NAME = 'my_callback'
+# 
+#     def v2_runner_on_ok(self, result):
+#         host = result._host.get_name()
+#         self._display.display(f"Task succeeded on {host}")
+# 
+#     def v2_playbook_on_stats(self, stats):
+#         self._display.display("Playbook finished!")
+
+
+# Example 5: Action Plugin (for complex module behavior)
+# Location: action_plugins/my_action.py
+
+- name: Action Plugin Demo
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Module with custom action plugin
+      my_action_module:
+        param1: value1
+
+
+# Enable custom plugins in ansible.cfg:
+# [defaults]
+# library = ./library
+# filter_plugins = ./filter_plugins
+# lookup_plugins = ./lookup_plugins
+# callback_plugins = ./callback_plugins
+# action_plugins = ./action_plugins

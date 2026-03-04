@@ -1,0 +1,28 @@
+---
+# Site.yml - Master playbook
+# Run: ansible-playbook -i inventory/production/hosts site.yml
+
+# Apply common configuration to all hosts
+- name: Apply common configuration
+  import_playbook: playbooks/common.yml
+  tags: common
+
+# Configure web servers
+- name: Configure web servers
+  import_playbook: playbooks/webservers.yml
+  tags: web
+
+# Configure database servers
+- name: Configure database servers
+  import_playbook: playbooks/dbservers.yml
+  tags: database
+
+# Configure load balancers
+- name: Configure load balancers
+  import_playbook: playbooks/loadbalancers.yml
+  tags: loadbalancer
+
+# Configure monitoring
+- name: Configure monitoring
+  import_playbook: playbooks/monitoring.yml
+  tags: monitoring

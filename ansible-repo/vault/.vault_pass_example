@@ -1,0 +1,9 @@
+# Example vault password file
+# Save your actual password in ~/.vault_pass (NOT in repo)
+# Add to .gitignore: .vault_pass*
+#
+# Usage: ansible-playbook playbook.yml --vault-password-file ~/.vault_pass
+#
+# This file should contain ONLY the password on a single line
+# Example content (replace with your actual password):
+MyVaultPassword123!

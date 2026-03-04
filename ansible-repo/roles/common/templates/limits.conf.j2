@@ -1,0 +1,6 @@
+# {{ ansible_managed }}
+# System limits configuration
+
+{% for limit in common_limits %}
+{{ limit.domain }}  {{ limit.type }}  {{ limit.item }}  {{ limit.value }}
+{% endfor %}

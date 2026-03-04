@@ -1,0 +1,20 @@
+---
+# Role variables (higher priority than defaults)
+# Use for role-internal variables that shouldn't be overridden
+
+# Internal paths
+_common_ssh_config_path: /etc/ssh/sshd_config
+_common_fail2ban_config_path: /etc/fail2ban
+
+# Service names by OS family
+_common_ssh_service_name:
+  Debian: ssh
+  RedHat: sshd
+
+_common_ntp_service_name:
+  Debian: ntp
+  RedHat: chronyd
+
+_common_ntp_package_name:
+  Debian: ntp
+  RedHat: chrony

@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+# Fail2ban jail configuration
+
+[DEFAULT]
+bantime = {{ common_fail2ban_bantime }}
+findtime = {{ common_fail2ban_findtime }}
+maxretry = {{ common_fail2ban_maxretry }}
+backend = auto
+banaction = iptables-multiport
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = {{ common_fail2ban_maxretry }}
+
+{% if common_fail2ban_extra_jails is defined %}
+{% for jail in common_fail2ban_extra_jails %}
+[{{ jail.name }}]
+enabled = {{ jail.enabled | default('true') }}
+port = {{ jail.port }}
+filter = {{ jail.filter }}
+logpath = {{ jail.logpath }}
+maxretry = {{ jail.maxretry | default(common_fail2ban_maxretry) }}
+{% endfor %}
+{% endif %}

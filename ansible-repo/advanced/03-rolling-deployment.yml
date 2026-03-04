@@ -1,0 +1,142 @@
+---
+# 03-rolling-deployment.yml
+# Zero-downtime rolling deployment pattern
+
+- name: Pre-deployment Checks
+  hosts: webservers
+  gather_facts: yes
+  run_once: true
+  
+  tasks:
+    - name: Verify minimum hosts available
+      assert:
+        that:
+          - groups['webservers'] | length >= 2
+        fail_msg: "Need at least 2 webservers for rolling deployment"
+
+    - name: Check deployment artifact exists
+      stat:
+        path: "{{ artifact_path | default('/tmp/app.tar.gz') }}"
+      delegate_to: localhost
+      register: artifact
+      failed_when: not artifact.stat.exists
+
+
+- name: Rolling Deployment
+  hosts: webservers
+  serial: "{{ deploy_serial | default(1) }}"  # Deploy 1 host at a time
+  max_fail_percentage: 0  # Zero tolerance for failures
+  gather_facts: yes
+
+  vars:
+    app_name: myapp
+    deploy_dir: /opt/apps/myapp
+    health_check_url: "http://{{ inventory_hostname }}:8080/health"
+    lb_api_url: "http://loadbalancer:8080/api/v1"
+
+  pre_tasks:
+    - name: Verify host is healthy before deployment
+      uri:
+        url: "{{ health_check_url }}"
+        status_code: 200
+      register: pre_health
+      retries: 3
+      delay: 5
+
+  tasks:
+    - name: Remove host from load balancer
+      uri:
+        url: "{{ lb_api_url }}/pool/remove"
+        method: POST
+        body:
+          host: "{{ inventory_hostname }}"
+        body_format: json
+      delegate_to: localhost
+      register: lb_remove
+
+    - name: Wait for connections to drain
+      pause:
+        seconds: "{{ drain_timeout | default(30) }}"
+
+    - name: Stop application
+      systemd:
+        name: "{{ app_name }}"
+        state: stopped
+
+    - name: Backup current version
+      archive:
+        path: "{{ deploy_dir }}"
+        dest: "/opt/backups/{{ app_name }}-{{ ansible_date_time.epoch }}.tar.gz"
+      ignore_errors: yes
+
+    - name: Deploy new version
+      unarchive:
+        src: "{{ artifact_path | default('/tmp/app.tar.gz') }}"
+        dest: "{{ deploy_dir }}"
+        owner: "{{ app_user | default('app') }}"
+        group: "{{ app_group | default('app') }}"
+      notify: restart application
+
+    - name: Update configuration
+      template:
+        src: app-config.j2
+        dest: "{{ deploy_dir }}/config.yml"
+        owner: "{{ app_user | default('app') }}"
+        mode: '0640'
+      notify: restart application
+
+    - name: Start application
+      systemd:
+        name: "{{ app_name }}"
+        state: started
+        enabled: yes
+
+    - name: Wait for application to be ready
+      uri:
+        url: "{{ health_check_url }}"
+        status_code: 200
+      register: health_result
+      until: health_result.status == 200
+      retries: 30
+      delay: 5
+
+    - name: Add host back to load balancer
+      uri:
+        url: "{{ lb_api_url }}/pool/add"
+        method: POST
+        body:
+          host: "{{ inventory_hostname }}"
+        body_format: json
+      delegate_to: localhost
+
+    - name: Verify host is serving traffic
+      uri:
+        url: "{{ health_check_url }}"
+        status_code: 200
+      register: final_health
+      retries: 5
+      delay: 10
+
+  handlers:
+    - name: restart application
+      systemd:
+        name: "{{ app_name }}"
+        state: restarted
+
+
+- name: Post-deployment Validation
+  hosts: webservers
+  gather_facts: no
+  run_once: true
+
+  tasks:
+    - name: Run smoke tests
+      uri:
+        url: "http://{{ item }}:8080/health"
+        status_code: 200
+      loop: "{{ groups['webservers'] }}"
+      delegate_to: localhost
+
+    - name: Deployment complete notification
+      debug:
+        msg: "Successfully deployed to {{ groups['webservers'] | length }} hosts"

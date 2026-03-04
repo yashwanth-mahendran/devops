@@ -1,0 +1,105 @@
+---
+# 05-async.yml
+# Demonstrates asynchronous tasks for long-running operations
+# async: timeout in seconds
+# poll: check status every N seconds (0 = fire and forget)
+
+- name: Async Task Patterns
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    # Basic async with polling
+    - name: Long running task with polling
+      command: sleep 10
+      async: 60          # Max runtime 60 seconds
+      poll: 5            # Check every 5 seconds
+      register: async_result
+
+    - name: Show async result
+      debug:
+        var: async_result
+
+    # Fire and forget (poll: 0)
+    - name: Start background process
+      shell: |
+        nohup /usr/bin/long_process.sh > /tmp/process.log 2>&1 &
+        echo $!
+      async: 300         # Max 5 minutes
+      poll: 0            # Don't wait
+      register: background_job
+
+    - name: Job ID for background process
+      debug:
+        msg: "Background job started with ansible_job_id: {{ background_job.ansible_job_id }}"
+
+    # Continue with other tasks while background process runs
+    - name: Do other work while waiting
+      debug:
+        msg: "Doing other work..."
+
+    # Check on fire-and-forget later
+    - name: Check background job status
+      async_status:
+        jid: "{{ background_job.ansible_job_id }}"
+      register: job_result
+      until: job_result.finished
+      retries: 30
+      delay: 10
+
+    # Multiple async tasks
+    - name: Start multiple long tasks
+      command: "sleep {{ item }}"
+      async: 60
+      poll: 0
+      loop:
+        - 5
+        - 10
+        - 15
+      register: async_tasks
+
+    - name: Wait for all async tasks
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: async_results
+      until: async_results.finished
+      retries: 30
+      delay: 2
+      loop: "{{ async_tasks.results }}"
+
+
+# Practical example: Database backup during maintenance
+- name: Async Database Operations
+  hosts: dbservers
+  gather_facts: no
+
+  tasks:
+    - name: Start database backup (async)
+      shell: /usr/local/bin/backup_database.sh
+      async: 3600        # Allow 1 hour
+      poll: 0
+      register: backup_job
+
+    - name: Continue with other maintenance
+      debug:
+        msg: "Performing maintenance while backup runs..."
+
+    - name: Wait for backup to complete
+      async_status:
+        jid: "{{ backup_job.ansible_job_id }}"
+      register: backup_result
+      until: backup_result.finished
+      retries: 60
+      delay: 60          # Check every minute
+
+    - name: Backup completed
+      debug:
+        msg: "Backup completed with rc={{ backup_result.rc }}"
+      when: backup_result.finished
+
+
+# Interview tip: async is useful for:
+# 1. Long-running tasks (backups, compilations)
+# 2. Fire-and-forget processes
+# 3. Parallel execution across many hosts
+# 4. Avoiding SSH timeout issues

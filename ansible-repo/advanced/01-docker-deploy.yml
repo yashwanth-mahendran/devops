@@ -1,0 +1,66 @@
+---
+# Advanced Example 1: Docker Deployment
+# Complete Docker application deployment
+
+- name: Deploy Docker Application
+  hosts: docker_hosts
+  become: yes
+  
+  vars:
+    docker_image: myapp:latest
+    container_name: myapp
+    app_port: 8080
+    host_port: 80
+  
+  tasks:
+    - name: Install Docker
+      include_role:
+        name: docker
+    
+    - name: Pull Docker image
+      docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+      register: image_pull
+    
+    - name: Stop existing container
+      docker_container:
+        name: "{{ container_name }}"
+        state: stopped
+      ignore_errors: yes
+    
+    - name: Remove old container
+      docker_container:
+        name: "{{ container_name }}"
+        state: absent
+      when: image_pull.changed
+    
+    - name: Deploy container
+      docker_container:
+        name: "{{ container_name }}"
+        image: "{{ docker_image }}"
+        state: started
+        restart_policy: always
+        ports:
+          - "{{ host_port }}:{{ app_port }}"
+        env:
+          APP_ENV: production
+          LOG_LEVEL: info
+        volumes:
+          - /opt/app/data:/data
+        healthcheck:
+          test: ["CMD", "curl", "-f", "http://localhost:{{ app_port }}/health"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+    
+    - name: Wait for application to be ready
+      uri:
+        url: "http://localhost:{{ host_port }}/health"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 10
+      delay: 5
+
+# Run with: ansible-playbook advanced/01-docker-deploy.yml

@@ -1,0 +1,44 @@
+---
+# Group variables for development environment
+# Applied to all hosts in the 'dev' group
+
+environment: development
+env_short: dev
+
+# Connection settings (for local VMs/containers)
+ansible_user: vagrant
+ansible_become: yes
+ansible_ssh_private_key_file: ~/.vagrant.d/insecure_private_key
+
+# Resource allocation (smaller for dev)
+nginx_worker_connections: 512
+postgresql_max_connections: 50
+
+# Security (relaxed for development)
+ssh_password_authentication: true
+enable_debug_endpoints: true
+firewall_enabled: false
+
+# SSL (self-signed OK for dev)
+ssl_self_signed: true
+ssl_force_redirect: false
+
+# Logging (verbose for debugging)
+log_level: debug
+enable_query_logging: true
+
+# Monitoring (basic)
+enable_detailed_monitoring: false
+monitoring_interval: 60
+
+# Backup (optional in dev)
+backup_enabled: false
+
+# Feature flags
+enable_maintenance_mode: false
+enable_hot_reload: true
+enable_debug_toolbar: true
+
+# Development-specific
+reset_db_on_deploy: true
+seed_test_data: true

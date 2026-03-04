@@ -1,0 +1,144 @@
+---
+# 04-dynamic-inventory.yml
+# Demonstrates working with dynamic inventory
+
+# First, enable dynamic inventory in ansible.cfg:
+# [inventory]
+# enable_plugins = aws_ec2, azure_rm, gcp_compute
+
+# AWS EC2 Dynamic Inventory
+# Create file: inventory/aws_ec2.yml
+# ---
+# plugin: amazon.aws.aws_ec2
+# regions:
+#   - us-east-1
+#   - us-west-2
+# filters:
+#   instance-state-name: running
+#   "tag:Environment": production
+# keyed_groups:
+#   - key: tags.Environment
+#     prefix: env
+#   - key: instance_type
+#     prefix: type
+#   - key: placement.availability_zone
+#     prefix: az
+# hostnames:
+#   - tag:Name
+#   - private-ip-address
+# compose:
+#   ansible_host: private_ip_address
+
+- name: Dynamic Inventory Demo
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Show how to use dynamic inventory
+      debug:
+        msg: |
+          Dynamic inventory examples:
+          
+          AWS EC2:
+            ansible-inventory -i inventory/aws_ec2.yml --list
+            ansible-playbook -i inventory/aws_ec2.yml playbook.yml
+          
+          Target specific groups:
+            ansible-playbook -i aws_ec2.yml playbook.yml -l env_production
+            ansible-playbook -i aws_ec2.yml playbook.yml -l type_t2_micro
+
+
+- name: Working with AWS EC2 Inventory
+  hosts: tag_Environment_production  # Group created by keyed_groups
+  gather_facts: yes
+
+  tasks:
+    - name: Show EC2 instance info
+      debug:
+        msg: |
+          Instance ID: {{ ec2_instance_id | default('N/A') }}
+          Instance Type: {{ ec2_instance_type | default('N/A') }}
+          Private IP: {{ ansible_host }}
+          Region: {{ ec2_region | default('N/A') }}
+
+
+- name: Using add_host for dynamic groups
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    # Dynamically add hosts during playbook run
+    - name: Query API for servers
+      set_fact:
+        discovered_servers:
+          - { name: web1, ip: "10.0.1.10", type: web }
+          - { name: web2, ip: "10.0.1.11", type: web }
+          - { name: db1, ip: "10.0.2.10", type: database }
+
+    - name: Add discovered hosts to inventory
+      add_host:
+        name: "{{ item.name }}"
+        ansible_host: "{{ item.ip }}"
+        groups:
+          - discovered
+          - "{{ item.type }}_servers"
+      loop: "{{ discovered_servers }}"
+
+    - name: Show dynamically created groups
+      debug:
+        msg: |
+          Discovered hosts: {{ groups['discovered'] | default([]) }}
+          Web servers: {{ groups['web_servers'] | default([]) }}
+          DB servers: {{ groups['database_servers'] | default([]) }}
+
+
+- name: Configure Discovered Web Servers
+  hosts: web_servers
+  gather_facts: no
+
+  tasks:
+    - name: Configure web server
+      debug:
+        msg: "Configuring {{ inventory_hostname }}"
+
+
+# Group by patterns
+- name: Group by Patterns Demo
+  hosts: all
+  gather_facts: yes
+
+  tasks:
+    - name: Group hosts by OS family
+      group_by:
+        key: "os_{{ ansible_os_family | lower }}"
+
+    - name: Group hosts by region (from hostname pattern)
+      group_by:
+        key: "region_{{ inventory_hostname | regex_search('-(\\w+)-', '\\1') | first | default('unknown') }}"
+
+
+# Use grouped hosts
+- name: Configure Debian Systems
+  hosts: os_debian
+  gather_facts: no
+
+  tasks:
+    - name: Debian-specific configuration
+      debug:
+        msg: "Configuring Debian system: {{ inventory_hostname }}"
+
+
+# Refresh inventory during play
+- name: Refresh Dynamic Inventory
+  hosts: localhost
+  gather_facts: no
+
+  tasks:
+    - name: Refresh inventory
+      meta: refresh_inventory
+
+    - name: Clear gathered facts
+      meta: clear_facts
+
+    - name: Clear host errors
+      meta: clear_host_errors

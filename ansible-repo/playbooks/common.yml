@@ -1,0 +1,12 @@
+---
+# Common configuration playbook
+# Applies to all hosts
+
+- name: Common Server Configuration
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - role: common
+      tags: common

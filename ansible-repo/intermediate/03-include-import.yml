@@ -1,0 +1,94 @@
+---
+# 03-include-import.yml
+# Demonstrates include vs import patterns
+# import_* = static, processed at playbook parse time
+# include_* = dynamic, processed at runtime
+
+- name: Include and Import Patterns
+  hosts: all
+  gather_facts: no
+
+  vars:
+    deploy_web: true
+    deploy_db: false
+
+  tasks:
+    # Static import - parsed at playbook load time
+    # - Cannot use loops
+    # - Cannot use conditional on import itself (only tasks inside)
+    # - Handlers from imported file are available immediately
+    - name: Import common tasks (static)
+      import_tasks: tasks/common.yml
+
+    # Dynamic include - processed at runtime
+    # - Can use loops and conditionals
+    # - Handlers not available until include is reached
+    # - Better for conditional execution
+    - name: Include web tasks (dynamic)
+      include_tasks: tasks/web.yml
+      when: deploy_web
+
+    - name: Include database tasks conditionally
+      include_tasks: tasks/database.yml
+      when: deploy_db
+
+    # Include with loop
+    - name: Include tasks for each service
+      include_tasks: tasks/service.yml
+      loop:
+        - nginx
+        - redis
+        - postgres
+      loop_control:
+        loop_var: service_name
+
+    # Include with variables
+    - name: Include with vars
+      include_tasks: tasks/configure.yml
+      vars:
+        config_file: /etc/app/config.yml
+        mode: production
+
+
+# Role includes follow same pattern
+- name: Role Include Patterns
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    # Static import of role
+    - import_role:
+        name: common
+      tags: common
+
+    # Dynamic include of role (runtime)
+    - include_role:
+        name: webserver
+      vars:
+        http_port: 8080
+      when: deploy_web | default(true)
+
+
+# Playbook includes
+# site.yml:
+# ---
+# - import_playbook: webservers.yml
+# - import_playbook: dbservers.yml
+# - import_playbook: monitoring.yml
+
+
+# Example: tasks/common.yml
+# ---
+# - name: Update package cache
+#   apt:
+#     update_cache: yes
+#   when: ansible_os_family == "Debian"
+#
+# - name: Install common packages
+#   package:
+#     name: "{{ item }}"
+#     state: present
+#   loop:
+#     - vim
+#     - curl
+#     - wget

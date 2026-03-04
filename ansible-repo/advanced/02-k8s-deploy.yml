@@ -1,0 +1,77 @@
+---
+# Advanced Example 2: Kubernetes Deployment
+# Deploy applications to Kubernetes
+
+- name: Deploy to Kubernetes
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    namespace: production
+    app_name: myapp
+    replicas: 3
+    image: myapp:v1.0.0
+  
+  tasks:
+    - name: Create namespace
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ namespace }}"
+    
+    - name: Deploy application
+      k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: "{{ app_name }}"
+            namespace: "{{ namespace }}"
+          spec:
+            replicas: "{{ replicas }}"
+            selector:
+              matchLabels:
+                app: "{{ app_name }}"
+            template:
+              metadata:
+                labels:
+                  app: "{{ app_name }}"
+              spec:
+                containers:
+                - name: "{{ app_name }}"
+                  image: "{{ image }}"
+                  ports:
+                  - containerPort: 8080
+    
+    - name: Create service
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ app_name }}"
+            namespace: "{{ namespace }}"
+          spec:
+            selector:
+              app: "{{ app_name }}"
+            ports:
+            - port: 80
+              targetPort: 8080
+            type: LoadBalancer
+    
+    - name: Wait for deployment
+      k8s_info:
+        kind: Deployment
+        name: "{{ app_name }}"
+        namespace: "{{ namespace }}"
+      register: deployment
+      until: deployment.resources[0].status.readyReplicas == replicas
+      retries: 10
+      delay: 10
+
+# Run with: ansible-playbook advanced/02-k8s-deploy.yml

@@ -1,0 +1,63 @@
+---
+# System configuration tasks
+
+- name: Set hostname
+  hostname:
+    name: "{{ common_hostname | default(inventory_hostname) }}"
+  when: common_set_hostname | bool
+
+- name: Configure /etc/hosts
+  template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    mode: '0644'
+
+- name: Set timezone
+  timezone:
+    name: "{{ common_timezone }}"
+
+- name: Install and configure NTP
+  package:
+    name: "{{ 'chrony' if ansible_os_family == 'RedHat' else 'ntp' }}"
+    state: present
+
+- name: Enable NTP service
+  service:
+    name: "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'ntp' }}"
+    state: started
+    enabled: yes
+
+- name: Configure system limits
+  template:
+    src: limits.conf.j2
+    dest: /etc/security/limits.d/99-ansible.conf
+    owner: root
+    mode: '0644'
+  when: common_configure_limits | bool
+
+- name: Configure sysctl settings
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop: "{{ common_sysctl_settings | dict2items }}"
+  when: common_sysctl_settings | length > 0
+
+- name: Create standard directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ common_directories }}"
+
+- name: Configure logrotate
+  template:
+    src: logrotate.conf.j2
+    dest: /etc/logrotate.d/custom
+    owner: root
+    mode: '0644'
+  when: common_configure_logrotate | bool

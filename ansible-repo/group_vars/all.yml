@@ -1,0 +1,54 @@
+---
+# Group variables for ALL hosts
+# These variables apply to every host in the inventory
+
+# SSH Configuration
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_python_interpreter: /usr/bin/python3
+
+# Timeouts
+ansible_ssh_timeout: 30
+ansible_command_timeout: 60
+
+# Privilege escalation
+ansible_become: yes
+ansible_become_method: sudo
+
+# Common packages to install on all hosts
+base_packages:
+  - vim
+  - curl
+  - wget
+  - htop
+  - git
+  - unzip
+  - jq
+  - tree
+  - net-tools
+
+# NTP Configuration
+ntp_timezone: UTC
+ntp_servers:
+  - 0.pool.ntp.org
+  - 1.pool.ntp.org
+
+# Log rotation
+logrotate_frequency: daily
+logrotate_keep: 14
+
+# Security settings
+ssh_permit_root_login: "no"
+ssh_password_authentication: "no"
+
+# Monitoring
+monitoring_enabled: true
+monitoring_agent: prometheus-node-exporter
+
+# Common directories
+app_base_dir: /opt/apps
+log_base_dir: /var/log/apps
+config_base_dir: /etc/apps
+
+# Contact information
+admin_email: ops@example.com
+alert_slack_channel: "#alerts"

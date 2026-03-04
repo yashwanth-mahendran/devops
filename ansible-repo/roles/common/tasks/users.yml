@@ -1,0 +1,49 @@
+---
+# User management tasks
+
+- name: Create admin group
+  group:
+    name: "{{ common_admin_group }}"
+    state: present
+
+- name: Create system users
+  user:
+    name: "{{ item.name }}"
+    groups: "{{ item.groups | default([]) }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    create_home: yes
+    state: present
+  loop: "{{ common_users }}"
+  when: common_users | length > 0
+
+- name: Set up SSH keys for users
+  authorized_key:
+    user: "{{ item.name }}"
+    key: "{{ item.ssh_key }}"
+    state: present
+    exclusive: "{{ item.exclusive_key | default(false) }}"
+  loop: "{{ common_users }}"
+  when:
+    - common_users | length > 0
+    - item.ssh_key is defined
+
+- name: Configure sudoers for admin users
+  lineinfile:
+    path: /etc/sudoers.d/{{ item.name }}
+    line: "{{ item.name }} ALL=(ALL) {{ 'NOPASSWD:' if item.nopasswd | default(false) else '' }}ALL"
+    state: present
+    create: yes
+    mode: '0440'
+    validate: 'visudo -cf %s'
+  loop: "{{ common_users }}"
+  when:
+    - common_users | length > 0
+    - item.sudo | default(false) | bool
+
+- name: Remove old users
+  user:
+    name: "{{ item }}"
+    state: absent
+    remove: yes
+  loop: "{{ common_users_removed }}"
+  when: common_users_removed | length > 0

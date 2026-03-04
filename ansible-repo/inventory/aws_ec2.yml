@@ -1,0 +1,72 @@
+---
+# AWS EC2 Dynamic Inventory Configuration
+# Usage: ansible-playbook -i inventory/aws_ec2.yml playbook.yml
+# Requires: amazon.aws collection (ansible-galaxy collection install amazon.aws)
+
+plugin: amazon.aws.aws_ec2
+
+# AWS regions to query
+regions:
+  - us-east-1
+  - us-west-2
+
+# AWS credentials (prefer env vars or IAM roles)
+# aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+# aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+
+# Filter instances
+filters:
+  instance-state-name: running
+  # "tag:Environment": production
+
+# Create groups based on tags and attributes
+keyed_groups:
+  # Groups by Environment tag
+  - key: tags.Environment
+    prefix: env
+    separator: "_"
+  
+  # Groups by Role tag
+  - key: tags.Role
+    prefix: role
+    separator: "_"
+  
+  # Groups by instance type
+  - key: instance_type
+    prefix: type
+    separator: "_"
+  
+  # Groups by availability zone
+  - key: placement.availability_zone
+    prefix: az
+    separator: "_"
+  
+  # Groups by VPC
+  - key: vpc_id
+    prefix: vpc
+    separator: "_"
+
+# Static groups
+groups:
+  # All EC2 instances
+  aws_ec2: true
+  
+  # Based on tag conditions
+  webservers: "'web' in (tags.Role | default(''))"
+  databases: "'db' in (tags.Role | default(''))"
+
+# How to determine instance hostname
+hostnames:
+  - tag:Name
+  - private-dns-name
+  - private-ip-address
+
+# Compose additional variables
+compose:
+  ansible_host: private_ip_address
+  ansible_user: "'ec2-user' if 'amzn' in image_id else 'ubuntu'"
+  instance_name: tags.Name | default('unnamed')
+  instance_env: tags.Environment | default('unknown')
+
+# Include extra variables from tags
+use_contrib_script_compatible_sanitization: true

@@ -1,0 +1,81 @@
+---
+# Default variables for common role
+# These have the LOWEST priority and can be overridden
+
+# User management
+common_admin_group: admins
+common_users: []
+  # - name: deploy
+  #   groups: [admins, docker]
+  #   shell: /bin/bash
+  #   ssh_key: "ssh-rsa AAAA..."
+  #   sudo: true
+  #   nopasswd: true
+common_users_removed: []
+
+# SSH configuration
+common_ssh_allowed_users: []
+common_disable_root_login: true
+common_disable_password_auth: true
+
+# Security
+common_install_fail2ban: true
+common_configure_firewall: true
+common_firewall_allowed_ports:
+  - "22"
+
+# Fail2ban settings
+common_fail2ban_bantime: 3600
+common_fail2ban_findtime: 600
+common_fail2ban_maxretry: 5
+
+# Package management
+common_packages:
+  - vim
+  - curl
+  - wget
+  - htop
+  - git
+  - unzip
+  - jq
+  - tree
+
+common_packages_os_specific: []
+common_packages_removed: []
+common_upgrade_packages: false
+
+# System configuration
+common_set_hostname: true
+common_hostname: "{{ inventory_hostname }}"
+common_timezone: UTC
+
+# System limits
+common_configure_limits: true
+common_limits:
+  - domain: "*"
+    type: soft
+    item: nofile
+    value: 65535
+  - domain: "*"
+    type: hard
+    item: nofile
+    value: 65535
+
+# Sysctl settings
+common_sysctl_settings:
+  net.core.somaxconn: 65535
+  net.ipv4.tcp_max_syn_backlog: 65535
+  vm.swappiness: 10
+
+# Directories to create
+common_directories:
+  - /opt/apps
+  - /var/log/apps
+
+# Logrotate
+common_configure_logrotate: true
+common_logrotate_paths:
+  - /var/log/apps/*.log
+common_logrotate_rotate: 7
+common_logrotate_daily: true
+common_logrotate_compress: true

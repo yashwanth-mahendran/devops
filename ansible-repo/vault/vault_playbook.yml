@@ -1,0 +1,80 @@
+---
+# Playbook demonstrating Ansible Vault usage
+# Run: ansible-playbook vault/vault_playbook.yml --ask-vault-pass
+
+- name: Vault Usage Examples
+  hosts: localhost
+  gather_facts: no
+
+  vars_files:
+    - vault_example.yml  # In production, this would be encrypted
+
+  tasks:
+    - name: Show how vault variables are used
+      debug:
+        msg: |
+          Database connection:
+          Host: {{ vault_db_host }}
+          Port: {{ vault_db_port }}
+          Database: {{ vault_db_name }}
+          Username: {{ vault_db_username }}
+          Password: ******* (hidden)
+
+    # Example: Use vault vars in templates
+    - name: Template with secrets
+      debug:
+        msg: |
+          DATABASE_URL=postgresql://{{ vault_db_username }}:{{ vault_db_password }}@{{ vault_db_host }}:{{ vault_db_port }}/{{ vault_db_name }}
+
+    # Example: Using vault for user creation
+    - name: Create users with vault passwords
+      debug:
+        msg: "Would create user with hashed password from vault"
+      # In real playbook:
+      # user:
+      #   name: admin
+      #   password: "{{ vault_user_passwords.admin }}"
+
+
+- name: Inline Vault Encryption Example
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    # This is how an encrypted string looks in a playbook
+    # Generated with: ansible-vault encrypt_string 'secret' --name 'inline_secret'
+    # inline_secret: !vault |
+    #   $ANSIBLE_VAULT;1.1;AES256
+    #   62313365396662343061393464336163383764316462...
+    inline_secret: "example_not_encrypted"
+
+  tasks:
+    - name: Use inline encrypted variable
+      debug:
+        msg: "Secret value: {{ inline_secret }}"
+
+
+- name: Multi-environment Vault Example
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    environment: development
+
+  tasks:
+    - name: Load environment-specific vault
+      include_vars:
+        file: "{{ environment }}_vault.yml"  # Would be encrypted per env
+      ignore_errors: yes  # For demo purposes
+
+    - name: Environment-specific setup
+      debug:
+        msg: "Loaded secrets for {{ environment }} environment"
+
+
+# Best Practices Demonstrated:
+# 1. Separate vault files per concern (db_vault.yml, api_vault.yml)
+# 2. Prefix all vault vars with vault_
+# 3. Use vars_files to include vault content
+# 4. Never expose secrets in logs (use no_log: true)
+# 5. Use inline encryption for single values in otherwise plain files
