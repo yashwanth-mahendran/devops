@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance-scanner
+  namespace: compliance
+  labels:
+    app: compliance-scanner
+    version: "1.0.0"
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/part-of: aws-compliance-platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: compliance-scanner
+  # Rolling update strategy (used for standard rollouts; Blue/Green handled separately)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: compliance-scanner
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+        sidecar.istio.io/inject: "true"
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+    spec:
+      serviceAccountName: compliance-scanner
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      # Spread across AZs and nodes
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: compliance-scanner
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: compliance-scanner
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: ["compliance-scanner"]
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: compliance-scanner
+          image: "123456789012.dkr.ecr.us-east-1.amazonaws.com/compliance-scanner:IMAGE_TAG"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: ENVIRONMENT
+            - name: SLOT
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: SLOT
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: AWS_REGION
+            - name: DYNAMODB_SCAN_TABLE
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: DYNAMODB_SCAN_TABLE
+            - name: DYNAMODB_JOB_TABLE
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: DYNAMODB_JOB_TABLE
+            - name: LAMBDA_FUNCTION_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: LAMBDA_FUNCTION_PREFIX
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: compliance-scanner-config
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: compliance-scanner-secret
+                  key: API_KEYS
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "256Mi"
+            limits:
+              cpu:    "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12         # 60s max startup
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}

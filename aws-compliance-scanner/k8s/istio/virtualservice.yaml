@@ -1,0 +1,69 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: compliance-scanner-vs
+  namespace: compliance
+spec:
+  hosts:
+    - compliance-scanner.internal.company.com
+  gateways:
+    - compliance-scanner-gateway
+  http:
+    # ── Health endpoints — no auth, no weight shifting ─────────────────────
+    - match:
+        - uri:
+            prefix: /healthz
+        - uri:
+            prefix: /readyz
+        - uri:
+            prefix: /metrics
+      route:
+        - destination:
+            host: compliance-scanner-blue
+            port:
+              number: 80
+
+    # ── API v1 — Blue/Green weighted routing ──────────────────────────────
+    # Update weights during deployment; Argo Rollouts or CI job patches this.
+    - match:
+        - uri:
+            prefix: /api/v1
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 40s
+        retryOn: "5xx,reset,connect-failure,retriable-4xx"
+      route:
+        - destination:
+            host: compliance-scanner-blue
+            port:
+              number: 80
+            subset: blue
+          weight: 100
+        - destination:
+            host: compliance-scanner-green
+            port:
+              number: 80
+            subset: green
+          weight: 0
+      headers:
+        request:
+          add:
+            x-forwarded-proto: https
+        response:
+          add:
+            strict-transport-security: "max-age=31536000; includeSubDomains"
+
+    # ── API Docs ───────────────────────────────────────────────────────────
+    - match:
+        - uri:
+            prefix: /api/docs
+        - uri:
+            prefix: /api/redoc
+        - uri:
+            prefix: /api/openapi.json
+      route:
+        - destination:
+            host: compliance-scanner-blue
+            port:
+              number: 80

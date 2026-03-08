@@ -1,0 +1,29 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: compliance-scanner-gateway
+  namespace: compliance
+spec:
+  selector:
+    istio: ingressgateway      # uses the default Istio Ingress Gateway
+  servers:
+    # ── HTTPS (production) ─────────────────────────────────────────────────
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: compliance-scanner-tls   # TLS secret in istio-system ns
+      hosts:
+        - compliance-scanner.internal.company.com
+
+    # ── HTTP redirect to HTTPS ─────────────────────────────────────────────
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - compliance-scanner.internal.company.com
+      tls:
+        httpsRedirect: true

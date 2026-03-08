@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance-scanner
+  namespace: compliance
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        slot: blue
+        version: "BLUE_IMAGE_TAG"
+    spec:
+      containers:
+        - name: compliance-scanner
+          env:
+            - name: SLOT
+              value: "blue"

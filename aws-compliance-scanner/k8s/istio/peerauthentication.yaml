@@ -1,0 +1,52 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: compliance-namespace-mtls
+  namespace: compliance
+spec:
+  # Enforce STRICT mTLS for all pods in the compliance namespace
+  mtls:
+    mode: STRICT
+---
+# Allow health probes from kubelet (outside the mesh)
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: compliance-scanner-permissive-probes
+  namespace: compliance
+spec:
+  selector:
+    matchLabels:
+      app: compliance-scanner
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    8080:
+      mode: PERMISSIVE     # kubelet liveness/readiness probes bypass mTLS
+---
+# AuthorizationPolicy: only allow traffic from istio-ingressgateway
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: compliance-scanner-allow-ingress
+  namespace: compliance
+spec:
+  selector:
+    matchLabels:
+      app: compliance-scanner
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+      to:
+        - operation:
+            ports: ["8080"]
+    # Allow Prometheus scraping from monitoring namespace
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            paths: ["/metrics"]

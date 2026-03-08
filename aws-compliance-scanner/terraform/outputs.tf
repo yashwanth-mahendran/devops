@@ -1,0 +1,9 @@
+output "eks_cluster_name"     { value = module.eks.cluster_name }
+output "eks_cluster_endpoint" { value = module.eks.cluster_endpoint }
+output "ecr_repository_url"   { value = aws_ecr_repository.compliance_scanner.repository_url }
+output "dynamodb_jobs_table"   { value = aws_dynamodb_table.scan_jobs.name }
+output "dynamodb_results_table"{ value = aws_dynamodb_table.scan_results.name }
+output "irsa_role_arn"         { value = module.irsa_compliance_scanner.iam_role_arn }
+output "lambda_role_arn"       { value = aws_iam_role.lambda_compliance.arn }
+output "vpc_id"                { value = module.vpc.vpc_id }
+output "private_subnet_ids"   { value = module.vpc.private_subnets }

@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compliance-scanner-blue
+  namespace: argocd
+  labels:
+    slot: blue
+    track: stable
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: compliance-deployments
+    notifications.argoproj.io/subscribe.on-sync-failed.slack:    compliance-alerts
+    notifications.argoproj.io/subscribe.on-health-degraded.slack: compliance-alerts
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: compliance-platform
+
+  source:
+    repoURL:        https://gitlab.company.com/platform/aws-compliance-scanner.git
+    targetRevision: main                     # always track main (stable)
+    path:           k8s/overlays/blue
+
+  destination:
+    server:    https://kubernetes.default.svc
+    namespace: compliance
+
+  syncPolicy:
+    automated:
+      prune:    true
+      selfHeal: true                         # auto-reconcile any manual drift
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - ApplyOutOfSyncOnly=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration:    5s
+        maxDuration: 3m
+        factor:      2
+
+  revisionHistoryLimit: 5
+
+  # Health checks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas             # ignore HPA-managed replica count

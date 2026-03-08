@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: compliance-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "AWS Compliance Scanner Platform"
+
+  # Source repos allowed
+  sourceRepos:
+    - "https://gitlab.company.com/platform/aws-compliance-scanner.git"
+    - "https://registry.company.com/helm"
+
+  # Allowed destination clusters/namespaces
+  destinations:
+    - namespace: compliance
+      server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+
+  # Cluster resource allow list
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: "rbac.authorization.k8s.io"
+      kind: ClusterRole
+    - group: "rbac.authorization.k8s.io"
+      kind: ClusterRoleBinding
+
+  # Namespace resource allow list
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # RBAC — only platform team can manage this project
+  roles:
+    - name: platform-admin
+      description: "Full access to compliance platform apps"
+      policies:
+        - p, proj:compliance-platform:platform-admin, applications, *, compliance-platform/*, allow
+      groups:
+        - platform-team
+    - name: developer-readonly
+      description: "Read-only for developers"
+      policies:
+        - p, proj:compliance-platform:developer-readonly, applications, get, compliance-platform/*, allow
+      groups:
+        - developers
+
+  # Sync windows — prevent deployments during business-critical hours on prod
+  syncWindows:
+    - kind: deny
+      schedule: "0 8 * * 1-5"    # Mon–Fri 8AM UTC
+      duration: 8h
+      applications:
+        - "*"
+      namespacedResources: true
+      manualSync: true

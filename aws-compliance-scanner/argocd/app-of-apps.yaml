@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compliance-platform-apps
+  namespace: argocd
+  labels:
+    type: app-of-apps
+spec:
+  project: default
+
+  source:
+    repoURL:        https://gitlab.company.com/platform/aws-compliance-scanner.git
+    targetRevision: main
+    path:           argocd/apps
+
+  destination:
+    server:    https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune:    true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

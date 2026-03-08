@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: compliance
+
+resources:
+  - ../../base
+
+# ── BLUE slot — stable / live production traffic ─────────────────────────────
+nameSuffix: "-blue"
+
+patches:
+  - path: deployment-patch.yaml
+  - path: service-patch.yaml
+
+images:
+  - name: "123456789012.dkr.ecr.us-east-1.amazonaws.com/compliance-scanner"
+    newTag: "BLUE_IMAGE_TAG"       # replaced by CI pipeline
+
+commonLabels:
+  slot: blue
+  track: stable

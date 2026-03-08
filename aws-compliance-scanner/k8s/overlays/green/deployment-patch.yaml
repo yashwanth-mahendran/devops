@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliance-scanner
+  namespace: compliance
+spec:
+  replicas: 1         # start with 1 replica for canary; Istio controls traffic weight
+  template:
+    metadata:
+      labels:
+        slot: green
+        version: "GREEN_IMAGE_TAG"
+    spec:
+      containers:
+        - name: compliance-scanner
+          env:
+            - name: SLOT
+              value: "green"

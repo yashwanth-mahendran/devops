@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: compliance-scanner-pdb
+  namespace: compliance
+spec:
+  # Always keep at least 2 pods running during voluntary disruptions
+  # (node drain, cluster upgrades, etc.)
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: compliance-scanner

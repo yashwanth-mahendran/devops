@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: compliance-scanner-config
+  namespace: compliance
+data:
+  ENVIRONMENT:                "production"
+  SLOT:                       "blue"               # patched by overlays
+  AWS_REGION:                 "us-east-1"
+  DYNAMODB_SCAN_TABLE:        "compliance-scan-results"
+  DYNAMODB_JOB_TABLE:         "compliance-scan-jobs"
+  LAMBDA_FUNCTION_PREFIX:     "compliance-check"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
+  LOG_LEVEL:                  "INFO"
+  MAX_CONCURRENT_LAMBDA_CALLS: "20"
+  SCAN_TIMEOUT_SECONDS:       "300"

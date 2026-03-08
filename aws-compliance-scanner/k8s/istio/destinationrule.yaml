@@ -1,0 +1,61 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: compliance-scanner-dr
+  namespace: compliance
+spec:
+  host: compliance-scanner-blue
+  trafficPolicy:
+    connectionPool:
+      http:
+        http2MaxRequests: 1000
+        h2UpgradePolicy: UPGRADE
+      tcp:
+        connectTimeout: 5s
+        maxConnections: 100
+    outlierDetection:
+      # Eject a host after 5 consecutive 5xx errors
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+    loadBalancer:
+      simple: LEAST_CONN
+    tls:
+      mode: ISTIO_MUTUAL   # mTLS between services
+  subsets:
+    - name: blue
+      labels:
+        slot: blue
+      trafficPolicy:
+        connectionPool:
+          http:
+            http2MaxRequests: 800
+    - name: green
+      labels:
+        slot: green
+      trafficPolicy:
+        connectionPool:
+          http:
+            http2MaxRequests: 200
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: compliance-scanner-green-dr
+  namespace: compliance
+spec:
+  host: compliance-scanner-green
+  trafficPolicy:
+    connectionPool:
+      http:
+        http2MaxRequests: 200
+      tcp:
+        connectTimeout: 5s
+    outlierDetection:
+      consecutiveGatewayErrors: 3
+      interval: 10s
+      baseEjectionTime: 60s
+    tls:
+      mode: ISTIO_MUTUAL

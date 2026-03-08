@@ -1,0 +1,56 @@
+# ArgoCD Application: compliance-scanner-blue (apps/ directory entry)
+# This file is referenced by the App-of-Apps (argocd/app-of-apps.yaml)
+# It mirrors argocd/application-blue.yaml but lives in argocd/apps/ for
+# App-of-Apps discovery.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: compliance-scanner-blue
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: compliance-platform
+    deployment/slot: blue
+    deployment/track: stable
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: compliance-platform
+
+  source:
+    repoURL: https://gitlab.company.com/platform/aws-compliance-scanner.git
+    targetRevision: HEAD
+    path: k8s/overlays/blue
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: compliance
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jqPathExpressions:
+        - .spec.metrics[] | select(.type == "External") | .external.target.value
+
+  revisionHistoryLimit: 5
