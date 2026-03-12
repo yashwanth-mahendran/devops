@@ -1,0 +1,52 @@
+# Request Authentication for JWT validation
+# Enables OAuth2/OIDC authentication at the mesh level
+
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: compliance-scanner-jwt
+  namespace: compliance
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: istio-security
+spec:
+  selector:
+    matchLabels:
+      app: compliance-scanner
+  jwtRules:
+    # Example: Auth0 / Okta / Cognito JWT validation
+    - issuer: "https://auth.company.com"  # Replace with your OIDC issuer
+      jwksUri: "https://auth.company.com/.well-known/jwks.json"
+      audiences:
+        - "compliance-scanner-api"
+      forwardOriginalToken: true
+      fromHeaders:
+        - name: Authorization
+          prefix: "Bearer "
+      fromCookies:
+        - "access_token"
+
+---
+# Authorization policy to require valid JWT for sensitive endpoints
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: require-jwt
+  namespace: compliance
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: istio-security
+spec:
+  selector:
+    matchLabels:
+      app: compliance-scanner
+  action: DENY
+  rules:
+    # Deny requests without valid JWT to sensitive endpoints
+    - to:
+        - operation:
+            methods: ["POST", "PUT", "DELETE"]
+            paths: ["/api/v1/scan*", "/api/v1/admin/*"]
+      when:
+        - key: request.auth.principal
+          notValues: ["*"]  # Deny if no JWT principal

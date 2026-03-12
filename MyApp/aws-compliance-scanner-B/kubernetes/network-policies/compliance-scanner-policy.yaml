@@ -1,0 +1,126 @@
+# Network policy for compliance-scanner application pods
+# Allows traffic from Istio Ingress Gateway and Prometheus only
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: compliance-scanner
+  namespace: compliance
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: compliance-scanner
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow from Istio Ingress Gateway only
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              istio: ingressgateway
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow from other compliance-scanner pods (Istio mTLS)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: compliance-scanner
+      ports:
+        - protocol: TCP
+          port: 15006  # Istio mTLS inbound
+
+    # Allow Istio control plane
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - protocol: TCP
+          port: 15012
+
+  egress:
+    # DNS resolution (CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # AWS VPC Endpoints (isolated subnets - 10.0.32.0/20)
+    - to:
+        - ipBlock:
+            cidr: 10.0.32.0/20
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # AWS APIs via NAT Gateway (for cross-region calls)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Istio control plane (istiod)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - protocol: TCP
+          port: 15010
+        - protocol: TCP
+          port: 15012
+        - protocol: TCP
+          port: 15014
+
+    # Allow to other compliance-scanner pods
+    - to:
+        - podSelector:
+            matchLabels:
+              app: compliance-scanner
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15006

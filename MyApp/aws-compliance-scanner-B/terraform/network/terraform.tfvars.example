@@ -1,0 +1,96 @@
+# Example Terraform variables for network module
+# Copy this file to terraform.tfvars and customize for your environment
+
+################################################################################
+# General Configuration
+################################################################################
+
+project_name = "compliance-scanner"
+environment  = "prod"  # dev, staging, or prod
+aws_region   = "us-east-1"
+
+################################################################################
+# VPC Configuration
+################################################################################
+
+vpc_cidr     = "10.0.0.0/16"
+cluster_name = "compliance-scanner-eks"
+
+# Multi-AZ NAT Gateway (recommended for production)
+enable_ha_nat = true
+
+# VPC Flow Logs retention (days)
+flow_log_retention_days = 30
+
+################################################################################
+# Security Configuration
+################################################################################
+
+# CIDR blocks allowed to access ALB
+# Use ["0.0.0.0/0"] for public access or restrict to specific ranges
+allowed_ingress_cidrs = [
+  "0.0.0.0/0"  # Public access
+  # "10.0.0.0/8",         # Internal VPC
+  # "203.0.113.0/24",     # Office IP range
+]
+
+# WAF IP Allowlist (bypasses other WAF rules)
+allowed_ip_addresses = [
+  # "203.0.113.50/32",    # Admin IP
+  # "198.51.100.0/24",    # CI/CD runners
+]
+
+# WAF IP Blocklist
+blocked_ip_addresses = [
+  # "192.0.2.0/24",       # Known bad actors
+]
+
+# Geo-blocking (ISO 3166-1 alpha-2 country codes)
+blocked_countries = [
+  # "RU",  # Russia
+  # "CN",  # China
+  # "KP",  # North Korea
+]
+
+# WAF rate limit (requests per 5 minutes per IP)
+waf_rate_limit         = 2000
+waf_log_retention_days = 30
+
+################################################################################
+# Certificate/TLS Configuration
+################################################################################
+
+# Domain name for the application
+domain_name = "compliance-scanner.example.com"
+
+# Create a new ACM certificate (set to true if you want Terraform to manage it)
+create_certificate = true
+
+# Subject Alternative Names for the certificate
+certificate_sans = [
+  "*.compliance-scanner.example.com"
+]
+
+# Route 53 hosted zone ID (required for DNS validation and record creation)
+route53_zone_id = ""  # e.g., "Z1234567890ABCDEF"
+
+# Existing certificate ARN (if not creating new)
+# certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/abc123"
+
+################################################################################
+# ALB Configuration
+################################################################################
+
+# Enable ALB access logs
+enable_alb_access_logs = true
+alb_access_logs_bucket = "your-alb-logs-bucket"
+
+################################################################################
+# Additional Tags
+################################################################################
+
+tags = {
+  Owner       = "devops-team"
+  CostCenter  = "engineering"
+  Application = "compliance-scanner"
+}

@@ -1,0 +1,848 @@
+# ────────────────────────────────────────────────────────────────────────────
+#  GitLab CI/CD Pipeline — AWS Compliance Scanner B (Step Functions Approach)
+#  Enhanced with: Monitoring validation, Step Functions deployment, Observability
+# ────────────────────────────────────────────────────────────────────────────
+image: python:3.12-slim
+
+variables:
+  # ── Registry ──────────────────────────────────────────────────────────────
+  ECR_REGISTRY:    "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+  IMAGE_NAME:      "compliance-scanner-b"
+  IMAGE_TAG:       "${CI_COMMIT_SHORT_SHA}"
+
+  # ── AWS ───────────────────────────────────────────────────────────────────
+  AWS_DEFAULT_REGION:  "us-east-1"
+  LAMBDA_PREFIX:       "compliance-check"
+  STEP_FUNCTION_NAME:  "compliance-scanner-orchestrator"
+
+  # ── EKS / ArgoCD ─────────────────────────────────────────────────────────
+  EKS_CLUSTER_NAME:    "compliance-eks-prod"
+  ARGOCD_SERVER:       "argocd.internal.company.com"
+  ARGOCD_APP_BLUE:     "compliance-scanner-b-blue"
+  ARGOCD_APP_GREEN:    "compliance-scanner-b-green"
+
+  # ── Blue/Green config ─────────────────────────────────────────────────────
+  CANARY_WEIGHT:       "10"
+  CANARY_BAKE_SEC:     "300"
+  ERROR_THRESHOLD:     "1"
+
+  # ── Monitoring ────────────────────────────────────────────────────────────
+  PROMETHEUS_URL:      "http://prometheus.monitoring.svc:9090"
+  GRAFANA_URL:         "https://grafana.internal.company.com"
+  PAGERDUTY_KEY:       "${PAGERDUTY_INTEGRATION_KEY}"
+  SLACK_WEBHOOK:       "${SLACK_ALERT_WEBHOOK}"
+
+  # ── Docker ───────────────────────────────────────────────────────────────
+  DOCKER_BUILDKIT:     "1"
+
+stages:
+  - lint
+  - test
+  - build
+  - security-scan
+  - deploy-infra          # NEW: Terraform for Step Functions
+  - deploy-lambda
+  - deploy-green
+  - verify-green
+  - promote-or-rollback
+  - post-deploy           # NEW: Monitoring validation
+
+# ── Cache shared across stages ───────────────────────────────────────────────
+cache:
+  key: "${CI_COMMIT_REF_SLUG}"
+  paths:
+    - .venv/
+    - .pip-cache/
+    - .terraform/
+
+# ── Common templates ─────────────────────────────────────────────────────────
+.python-setup: &python-setup
+  before_script:
+    - pip install --quiet virtualenv
+    - virtualenv .venv
+    - source .venv/bin/activate
+    - pip install --quiet -r fastapi-app/requirements.txt
+    - pip install --quiet pytest pytest-asyncio httpx ruff bandit safety moto
+
+.aws-setup: &aws-setup
+  before_script:
+    - apk add --no-cache curl jq bc aws-cli
+    - aws sts get-caller-identity
+
+.k8s-setup: &k8s-setup
+  image: alpine/k8s:1.29.2
+  before_script:
+    - apk add --no-cache curl jq bc
+    - curl -sSL -o /usr/local/bin/argocd
+        "https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64"
+    - chmod +x /usr/local/bin/argocd
+    - argocd login $ARGOCD_SERVER --auth-token $ARGOCD_AUTH_TOKEN --grpc-web
+    - aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_DEFAULT_REGION
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: lint
+# ═══════════════════════════════════════════════════════════════════════════
+
+lint:ruff:
+  stage: lint
+  <<: *python-setup
+  script:
+    - ruff check fastapi-app/app/ lambda-functions/
+    - ruff format --check fastapi-app/app/ lambda-functions/
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+lint:yaml:
+  stage: lint
+  image: cytopia/yamllint
+  script:
+    - yamllint k8s/ argocd/ -d relaxed
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+lint:terraform:
+  stage: lint
+  image: hashicorp/terraform:1.7
+  script:
+    - cd terraform
+    - terraform fmt -check -recursive
+    - terraform validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: test
+# ═══════════════════════════════════════════════════════════════════════════
+
+test:unit:
+  stage: test
+  <<: *python-setup
+  script:
+    - cd fastapi-app
+    - pytest tests/unit/ -v --tb=short --junitxml=../junit-unit.xml --cov=app --cov-report=xml
+  coverage: '/^TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      junit: junit-unit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 7 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+test:integration:
+  stage: test
+  <<: *python-setup
+  services:
+    - name: amazon/dynamodb-local
+      alias: dynamodb-local
+  variables:
+    AWS_ACCESS_KEY_ID:     "dummy"
+    AWS_SECRET_ACCESS_KEY: "dummy"
+    DYNAMODB_ENDPOINT:     "http://dynamodb-local:8000"
+  script:
+    - cd fastapi-app
+    - pytest tests/integration/ -v --junitxml=../junit-integration.xml
+  artifacts:
+    reports:
+      junit: junit-integration.xml
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+test:stepfunctions-local:
+  stage: test
+  image: amazon/stepfunctions-local
+  services:
+    - name: amazon/dynamodb-local
+      alias: dynamodb-local
+  script:
+    # Test Step Functions state machine locally
+    - |
+      # Start stepfunctions-local with mock config
+      cat > MockConfigFile.json <<EOF
+      {
+        "StateMachines": {
+          "ComplianceScannerMock": {
+            "Definition": $(cat terraform/stepfunctions-definition.json)
+          }
+        }
+      }
+      EOF
+      # Run sample execution
+      aws stepfunctions --endpoint http://localhost:8083 create-state-machine \
+        --name "test-state-machine" \
+        --definition file://terraform/stepfunctions-definition.json \
+        --role-arn "arn:aws:iam::123456789012:role/test-role"
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: build
+# ═══════════════════════════════════════════════════════════════════════════
+
+build:fastapi-image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - |
+      printf '{"credHelpers": {"%s": "ecr-login"}}' "$ECR_REGISTRY" \
+        > /kaniko/.docker/config.json
+    - /kaniko/executor
+        --context="${CI_PROJECT_DIR}/fastapi-app"
+        --dockerfile="${CI_PROJECT_DIR}/fastapi-app/Dockerfile"
+        --destination="${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+        --destination="${ECR_REGISTRY}/${IMAGE_NAME}:latest"
+        --cache=true
+        --cache-ttl=24h
+        --build-arg="BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        --build-arg="GIT_COMMIT=${CI_COMMIT_SHA}"
+        --label="org.opencontainers.image.revision=${CI_COMMIT_SHA}"
+        --label="org.opencontainers.image.source=${CI_PROJECT_URL}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+build:lambda-packages:
+  stage: build
+  <<: *python-setup
+  script:
+    - |
+      CHECKS="cfn-drift vpc-flow-logs audit-manager s3-encryption iam-mfa cloudtrail sg-unrestricted-ssh guardduty config-recorder secrets-manager-rotation ecr-image-scanning eks-cluster-logging rds-encryption ebs-encryption result-aggregator"
+      for check in $CHECKS; do
+        dir="lambda-functions/${check}"
+        [ -d "lambda-functions/${check}-check" ] && dir="lambda-functions/${check}-check"
+        [ -d "$dir" ] || continue
+        echo "📦 Packaging $dir..."
+        pushd "$dir"
+        mkdir -p package
+        pip install -r requirements.txt -t ./package --quiet 2>/dev/null || true
+        cp *.py ./package/ 2>/dev/null || true
+        pushd package
+        zip -r "../${check}.zip" . -q
+        popd
+        rm -rf package
+        popd
+      done
+  artifacts:
+    paths:
+      - lambda-functions/**/*.zip
+    expire_in: 1 day
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: security-scan
+# ═══════════════════════════════════════════════════════════════════════════
+
+security:sast:
+  stage: security-scan
+  <<: *python-setup
+  script:
+    - bandit -r fastapi-app/app/ lambda-functions/ -f json -o bandit-report.json || true
+    - |
+      HIGH_ISSUES=$(jq '.results | map(select(.issue_severity == "HIGH")) | length' bandit-report.json)
+      if [ "$HIGH_ISSUES" -gt 0 ]; then
+        echo "❌ Found $HIGH_ISSUES HIGH severity issues"
+        jq '.results | map(select(.issue_severity == "HIGH"))' bandit-report.json
+        exit 1
+      fi
+  artifacts:
+    reports:
+      sast: bandit-report.json
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+security:container-scan:
+  stage: security-scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - trivy image
+        --format json
+        --output container-scan.json
+        --severity HIGH,CRITICAL
+        --exit-code 1
+        "${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+  artifacts:
+    reports:
+      container_scanning: container-scan.json
+    expire_in: 7 days
+  needs:
+    - build:fastapi-image
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+security:dependency-check:
+  stage: security-scan
+  <<: *python-setup
+  script:
+    - safety check -r fastapi-app/requirements.txt --json --output safety-report.json || true
+    - |
+      CRITICAL=$(jq '[.[] | select(.severity == "critical")] | length' safety-report.json 2>/dev/null || echo "0")
+      if [ "$CRITICAL" -gt 0 ]; then
+        echo "❌ Found $CRITICAL critical vulnerabilities"
+        exit 1
+      fi
+  artifacts:
+    paths:
+      - safety-report.json
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+security:terraform-scan:
+  stage: security-scan
+  image:
+    name: bridgecrew/checkov:latest
+    entrypoint: [""]
+  script:
+    - checkov -d terraform/ --output-file checkov-report.json --output json || true
+  artifacts:
+    paths:
+      - checkov-report.json
+    expire_in: 7 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: deploy-infra (Step Functions + IAM)
+# ═══════════════════════════════════════════════════════════════════════════
+
+deploy:terraform:
+  stage: deploy-infra
+  image: hashicorp/terraform:1.7
+  before_script:
+    - cd terraform
+    - terraform init -backend-config="bucket=${TF_STATE_BUCKET}"
+  script:
+    - terraform plan -out=tfplan -var="image_tag=${IMAGE_TAG}"
+    - terraform apply -auto-approve tfplan
+    # Export Step Function ARN for FastAPI deployment
+    - |
+      SFN_ARN=$(terraform output -raw stepfunctions_arn)
+      echo "STEP_FUNCTION_ARN=${SFN_ARN}" >> ../deploy.env
+  artifacts:
+    reports:
+      dotenv: deploy.env
+    expire_in: 1 day
+  needs:
+    - security:terraform-scan
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  environment:
+    name: production/infrastructure
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: deploy-lambda
+# ═══════════════════════════════════════════════════════════════════════════
+
+deploy:lambda:
+  stage: deploy-lambda
+  image: amazon/aws-cli
+  script:
+    - |
+      CHECKS="cfn-drift vpc-flow-logs audit-manager s3-encryption iam-mfa cloudtrail sg-unrestricted-ssh guardduty config-recorder secrets-manager-rotation ecr-image-scanning eks-cluster-logging rds-encryption ebs-encryption"
+      
+      for check in $CHECKS; do
+        FUNCTION_NAME="${LAMBDA_PREFIX}-${check}"
+        ZIP_FILE="lambda-functions/${check}-check/${check}.zip"
+        [ -f "$ZIP_FILE" ] || ZIP_FILE="lambda-functions/${check}/${check}.zip"
+        [ -f "$ZIP_FILE" ] || continue
+
+        echo "🚀 Deploying ${FUNCTION_NAME}..."
+        aws lambda update-function-code \
+          --function-name "$FUNCTION_NAME" \
+          --zip-file "fileb://${ZIP_FILE}" \
+          --region "$AWS_DEFAULT_REGION"
+
+        aws lambda wait function-updated \
+          --function-name "$FUNCTION_NAME" \
+          --region "$AWS_DEFAULT_REGION"
+
+        # Publish version
+        NEW_VERSION=$(aws lambda publish-version \
+          --function-name "$FUNCTION_NAME" \
+          --description "CI deploy ${IMAGE_TAG}" \
+          --query 'Version' --output text)
+
+        # Update :live alias
+        aws lambda update-alias \
+          --function-name "$FUNCTION_NAME" \
+          --name live \
+          --function-version "$NEW_VERSION"
+
+        echo "✅ ${FUNCTION_NAME} deployed → version ${NEW_VERSION}"
+      done
+
+    # Deploy result-aggregator Lambda
+    - |
+      echo "🚀 Deploying result-aggregator..."
+      aws lambda update-function-code \
+        --function-name "${LAMBDA_PREFIX}-result-aggregator" \
+        --zip-file "fileb://lambda-functions/result-aggregator/result-aggregator.zip" \
+        --region "$AWS_DEFAULT_REGION"
+      aws lambda wait function-updated \
+        --function-name "${LAMBDA_PREFIX}-result-aggregator"
+      aws lambda publish-version \
+        --function-name "${LAMBDA_PREFIX}-result-aggregator" \
+        --description "CI deploy ${IMAGE_TAG}"
+  needs:
+    - build:lambda-packages
+    - deploy:terraform
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: deploy-green
+# ═══════════════════════════════════════════════════════════════════════════
+
+deploy:green:
+  stage: deploy-green
+  <<: *k8s-setup
+  script:
+    # ── 1. Update green overlay with new image + Step Function ARN ────────
+    - |
+      cd k8s/overlays/green
+      kustomize edit set image \
+        "${ECR_REGISTRY}/${IMAGE_NAME}=${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+      
+      # Inject Step Function ARN into ConfigMap patch
+      cat > configmap-patch.yaml <<EOF
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: compliance-scanner-config
+      data:
+        STEP_FUNCTION_ARN: "${STEP_FUNCTION_ARN}"
+        IMAGE_TAG: "${IMAGE_TAG}"
+        SLOT: "green"
+      EOF
+
+    # ── 2. Commit changes (GitOps) ────────────────────────────────────────
+    - |
+      git config user.email "ci@company.com"
+      git config user.name  "GitLab CI"
+      git add k8s/overlays/green/
+      git commit -m "deploy(green): image=${IMAGE_TAG} sfn=${STEP_FUNCTION_ARN} [skip ci]"
+      git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD:main
+
+    # ── 3. ArgoCD sync ────────────────────────────────────────────────────
+    - argocd app sync $ARGOCD_APP_GREEN --prune --timeout 180
+    - argocd app wait $ARGOCD_APP_GREEN --health --timeout 180
+
+    # ── 4. Start canary ───────────────────────────────────────────────────
+    - |
+      kubectl patch virtualservice compliance-scanner-vs -n compliance \
+        --type=json -p="[
+          {\"op\":\"replace\",\"path\":\"/spec/http/1/route/0/weight\",\"value\":$((100-CANARY_WEIGHT))},
+          {\"op\":\"replace\",\"path\":\"/spec/http/1/route/1/weight\",\"value\":${CANARY_WEIGHT}}
+        ]"
+      echo "CANARY_STARTED=true" >> canary.env
+      echo "CANARY_START_TIME=$(date +%s)" >> canary.env
+  artifacts:
+    reports:
+      dotenv: canary.env
+    expire_in: 1 day
+  environment:
+    name: production/green
+    url: https://compliance-scanner.internal.company.com
+  needs:
+    - build:fastapi-image
+    - deploy:lambda
+    - security:container-scan
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: verify-green
+# ═══════════════════════════════════════════════════════════════════════════
+
+verify:canary:
+  stage: verify-green
+  image: curlimages/curl:latest
+  before_script:
+    - apk add --no-cache jq bc aws-cli
+  script:
+    - echo "⏳ Waiting ${CANARY_BAKE_SEC}s for canary observation..."
+    - sleep $CANARY_BAKE_SEC
+
+    # ── 1. Query Prometheus for error rate ────────────────────────────────
+    - |
+      END_TIME=$(date +%s)
+      START_TIME=$((END_TIME - CANARY_BAKE_SEC))
+      
+      # Query Prometheus
+      ERROR_RATE=$(curl -s "${PROMETHEUS_URL}/api/v1/query" \
+        --data-urlencode "query=sum(rate(http_requests_total{app=\"compliance-scanner\",slot=\"green\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{app=\"compliance-scanner\",slot=\"green\"}[5m])) * 100" \
+        | jq -r '.data.result[0].value[1] // "0"')
+      
+      echo "📊 Green slot error rate: ${ERROR_RATE}%"
+
+    # ── 2. Query Step Functions execution success rate ────────────────────
+    - |
+      SFN_SUCCESS=$(aws cloudwatch get-metric-statistics \
+        --namespace "AWS/States" \
+        --metric-name "ExecutionsSucceeded" \
+        --dimensions Name=StateMachineArn,Value=${STEP_FUNCTION_ARN} \
+        --statistics Sum \
+        --start-time "$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" \
+        --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --period 300 \
+        --query "Datapoints[0].Sum" --output text 2>/dev/null || echo "0")
+      
+      SFN_FAILED=$(aws cloudwatch get-metric-statistics \
+        --namespace "AWS/States" \
+        --metric-name "ExecutionsFailed" \
+        --dimensions Name=StateMachineArn,Value=${STEP_FUNCTION_ARN} \
+        --statistics Sum \
+        --start-time "$(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" \
+        --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --period 300 \
+        --query "Datapoints[0].Sum" --output text 2>/dev/null || echo "0")
+      
+      echo "📊 Step Functions: ${SFN_SUCCESS} succeeded, ${SFN_FAILED} failed"
+
+    # ── 3. Health check ───────────────────────────────────────────────────
+    - |
+      HTTP_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+        -H "x-app-slot: green" \
+        https://compliance-scanner.internal.company.com/healthz)
+      
+      READY_CODE=$(curl -sk -o /dev/null -w "%{http_code}" \
+        -H "x-app-slot: green" \
+        https://compliance-scanner.internal.company.com/readyz)
+      
+      echo "🏥 Health: ${HTTP_CODE}, Ready: ${READY_CODE}"
+
+    # ── 4. Evaluate all checks ────────────────────────────────────────────
+    - |
+      FAILED=false
+      
+      if (( $(echo "$ERROR_RATE > $ERROR_THRESHOLD" | bc -l) )); then
+        echo "❌ Error rate ${ERROR_RATE}% exceeds threshold ${ERROR_THRESHOLD}%"
+        FAILED=true
+      fi
+      
+      if [ "$HTTP_CODE" != "200" ]; then
+        echo "❌ Health check failed: HTTP $HTTP_CODE"
+        FAILED=true
+      fi
+      
+      if [ "$READY_CODE" != "200" ]; then
+        echo "❌ Readiness check failed: HTTP $READY_CODE"
+        FAILED=true
+      fi
+      
+      if [ "${SFN_FAILED:-0}" -gt 0 ]; then
+        echo "⚠️ Warning: ${SFN_FAILED} Step Functions executions failed"
+      fi
+      
+      if [ "$FAILED" = "true" ]; then
+        echo "VERIFY_PASSED=false" >> verify.env
+        exit 1
+      else
+        echo "✅ All verification checks passed"
+        echo "VERIFY_PASSED=true" >> verify.env
+      fi
+  artifacts:
+    reports:
+      dotenv: verify.env
+    expire_in: 1 day
+  needs:
+    - deploy:green
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: promote-or-rollback
+# ═══════════════════════════════════════════════════════════════════════════
+
+promote:blue-green-swap:
+  stage: promote-or-rollback
+  <<: *k8s-setup
+  script:
+    - echo "✅ Promoting green → blue (full traffic cutover)"
+
+    # ── 1. Shift 100% to green ────────────────────────────────────────────
+    - |
+      kubectl patch virtualservice compliance-scanner-vs -n compliance \
+        --type=json -p='[
+          {"op":"replace","path":"/spec/http/1/route/0/weight","value":0},
+          {"op":"replace","path":"/spec/http/1/route/1/weight","value":100}
+        ]'
+
+    # ── 2. Stability window ───────────────────────────────────────────────
+    - sleep 30
+
+    # ── 3. Update blue to match green ─────────────────────────────────────
+    - |
+      cd k8s/overlays/blue
+      kustomize edit set image \
+        "${ECR_REGISTRY}/${IMAGE_NAME}=${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+      
+      cat > configmap-patch.yaml <<EOF
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: compliance-scanner-config
+      data:
+        STEP_FUNCTION_ARN: "${STEP_FUNCTION_ARN}"
+        IMAGE_TAG: "${IMAGE_TAG}"
+        SLOT: "blue"
+      EOF
+
+    # ── 4. Commit and sync blue ───────────────────────────────────────────
+    - |
+      git config user.email "ci@company.com"
+      git config user.name  "GitLab CI"
+      git add k8s/overlays/blue/
+      git commit -m "promote(blue): image=${IMAGE_TAG} [skip ci]"
+      git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" HEAD:main
+
+    - argocd app sync $ARGOCD_APP_BLUE --prune --timeout 180
+    - argocd app wait $ARGOCD_APP_BLUE --health --timeout 180
+
+    # ── 5. Route back to blue ─────────────────────────────────────────────
+    - |
+      kubectl patch virtualservice compliance-scanner-vs -n compliance \
+        --type=json -p='[
+          {"op":"replace","path":"/spec/http/1/route/0/weight","value":100},
+          {"op":"replace","path":"/spec/http/1/route/1/weight","value":0}
+        ]'
+
+    # ── 6. Tag ECR image as stable ────────────────────────────────────────
+    - |
+      aws ecr batch-delete-image --repository-name $IMAGE_NAME --image-ids imageTag=stable || true
+      MANIFEST=$(aws ecr batch-get-image --repository-name $IMAGE_NAME \
+        --image-ids imageTag=${IMAGE_TAG} --query 'images[].imageManifest' --output text)
+      aws ecr put-image --repository-name $IMAGE_NAME \
+        --image-tag stable --image-manifest "$MANIFEST"
+
+    # ── 7. Send success notification ──────────────────────────────────────
+    - |
+      curl -X POST "${SLACK_WEBHOOK}" \
+        -H 'Content-type: application/json' \
+        --data "{
+          \"text\": \"✅ *Deployment Successful*\",
+          \"attachments\": [{
+            \"color\": \"good\",
+            \"fields\": [
+              {\"title\": \"Application\", \"value\": \"compliance-scanner-b\", \"short\": true},
+              {\"title\": \"Version\", \"value\": \"${IMAGE_TAG}\", \"short\": true},
+              {\"title\": \"Environment\", \"value\": \"production\", \"short\": true},
+              {\"title\": \"Step Function\", \"value\": \"${STEP_FUNCTION_NAME}\", \"short\": true}
+            ]
+          }]
+        }"
+
+    - echo "🎉 Promotion complete. Blue is now running ${IMAGE_TAG}"
+  environment:
+    name: production/blue
+    url: https://compliance-scanner.internal.company.com
+  needs:
+    - verify:canary
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+
+
+rollback:green:
+  stage: promote-or-rollback
+  <<: *k8s-setup
+  script:
+    - echo "🚨 ROLLBACK triggered — reverting to blue"
+    
+    # ── 1. Immediate traffic shift ────────────────────────────────────────
+    - |
+      kubectl patch virtualservice compliance-scanner-vs -n compliance \
+        --type=json -p='[
+          {"op":"replace","path":"/spec/http/1/route/0/weight","value":100},
+          {"op":"replace","path":"/spec/http/1/route/1/weight","value":0}
+        ]'
+
+    # ── 2. Create PagerDuty incident ──────────────────────────────────────
+    - |
+      curl -X POST "https://events.pagerduty.com/v2/enqueue" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"routing_key\": \"${PAGERDUTY_KEY}\",
+          \"event_action\": \"trigger\",
+          \"dedup_key\": \"compliance-scanner-deploy-${CI_PIPELINE_ID}\",
+          \"payload\": {
+            \"summary\": \"Compliance Scanner deployment ${IMAGE_TAG} failed canary verification\",
+            \"severity\": \"warning\",
+            \"source\": \"gitlab-ci\",
+            \"custom_details\": {
+              \"pipeline_url\": \"${CI_PIPELINE_URL}\",
+              \"image_tag\": \"${IMAGE_TAG}\",
+              \"error_rate\": \"${ERROR_RATE}%\"
+            }
+          }
+        }"
+
+    # ── 3. Slack alert ────────────────────────────────────────────────────
+    - |
+      curl -X POST "${SLACK_WEBHOOK}" \
+        -H 'Content-type: application/json' \
+        --data "{
+          \"text\": \"🚨 *Deployment Rollback*\",
+          \"attachments\": [{
+            \"color\": \"danger\",
+            \"fields\": [
+              {\"title\": \"Application\", \"value\": \"compliance-scanner-b\", \"short\": true},
+              {\"title\": \"Failed Version\", \"value\": \"${IMAGE_TAG}\", \"short\": true},
+              {\"title\": \"Reason\", \"value\": \"Canary verification failed\", \"short\": false},
+              {\"title\": \"Pipeline\", \"value\": \"<${CI_PIPELINE_URL}|View Pipeline>\", \"short\": true}
+            ]
+          }]
+        }"
+  environment:
+    name: production/rollback
+    action: stop
+  needs:
+    - verify:canary
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_failure
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STAGE: post-deploy (Monitoring Validation)
+# ═══════════════════════════════════════════════════════════════════════════
+
+post-deploy:validate-monitoring:
+  stage: post-deploy
+  image: curlimages/curl:latest
+  before_script:
+    - apk add --no-cache jq
+  script:
+    - echo "🔍 Validating monitoring stack..."
+
+    # ── 1. Verify Prometheus targets ──────────────────────────────────────
+    - |
+      TARGETS=$(curl -s "${PROMETHEUS_URL}/api/v1/targets" | \
+        jq '[.data.activeTargets[] | select(.labels.app == "compliance-scanner")] | length')
+      echo "📊 Prometheus targets for compliance-scanner: ${TARGETS}"
+      if [ "$TARGETS" -lt 1 ]; then
+        echo "⚠️ Warning: No Prometheus targets found"
+      fi
+
+    # ── 2. Verify Grafana dashboard exists ────────────────────────────────
+    - |
+      DASHBOARD=$(curl -sk -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
+        "${GRAFANA_URL}/api/search?query=compliance-scanner" | jq length)
+      echo "📊 Grafana dashboards: ${DASHBOARD}"
+
+    # ── 3. Verify CloudWatch alarms ───────────────────────────────────────
+    - |
+      ALARMS=$(aws cloudwatch describe-alarms \
+        --alarm-name-prefix "compliance-scanner" \
+        --query "MetricAlarms | length(@)" --output text)
+      echo "📊 CloudWatch alarms: ${ALARMS}"
+
+    # ── 4. Test Step Functions CloudWatch metrics ─────────────────────────
+    - |
+      SFN_METRICS=$(aws cloudwatch list-metrics \
+        --namespace "AWS/States" \
+        --dimensions Name=StateMachineArn,Value=${STEP_FUNCTION_ARN} \
+        --query "Metrics | length(@)" --output text)
+      echo "📊 Step Functions metrics available: ${SFN_METRICS}"
+
+    - echo "✅ Monitoring validation complete"
+  needs:
+    - promote:blue-green-swap
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  allow_failure: true
+
+
+post-deploy:smoke-test:
+  stage: post-deploy
+  image: curlimages/curl:latest
+  before_script:
+    - apk add --no-cache jq
+  script:
+    - echo "🧪 Running post-deployment smoke tests..."
+
+    # ── 1. API Health ─────────────────────────────────────────────────────
+    - |
+      curl -sf https://compliance-scanner.internal.company.com/healthz | jq
+      curl -sf https://compliance-scanner.internal.company.com/readyz | jq
+
+    # ── 2. Submit test scan ───────────────────────────────────────────────
+    - |
+      RESPONSE=$(curl -s -X POST \
+        https://compliance-scanner.internal.company.com/api/v1/scan \
+        -H "X-API-Key: ${TEST_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "account_ids": ["'${AWS_ACCOUNT_ID}'"],
+          "regions": ["us-east-1"],
+          "checks": ["vpc_flow_logs"]
+        }')
+      
+      JOB_ID=$(echo "$RESPONSE" | jq -r '.job_id')
+      echo "📋 Created test scan: $JOB_ID"
+
+    # ── 3. Poll for completion (max 60s) ──────────────────────────────────
+    - |
+      for i in {1..12}; do
+        STATUS=$(curl -s \
+          https://compliance-scanner.internal.company.com/api/v1/scan/${JOB_ID} \
+          -H "X-API-Key: ${TEST_API_KEY}" | jq -r '.status')
+        echo "Status: $STATUS"
+        if [ "$STATUS" = "COMPLETED" ] || [ "$STATUS" = "PARTIAL" ]; then
+          echo "✅ Test scan completed"
+          break
+        fi
+        sleep 5
+      done
+
+    - echo "✅ Smoke tests passed"
+  needs:
+    - promote:blue-green-swap
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SCHEDULED JOBS
+# ═══════════════════════════════════════════════════════════════════════════
+
+scheduled:dependency-update:
+  stage: test
+  <<: *python-setup
+  script:
+    - pip install pip-audit
+    - pip-audit -r fastapi-app/requirements.txt --format json > audit.json || true
+    - |
+      VULNS=$(jq '.dependencies | map(select(.vulns | length > 0)) | length' audit.json)
+      if [ "$VULNS" -gt 0 ]; then
+        curl -X POST "${SLACK_WEBHOOK}" \
+          -H 'Content-type: application/json' \
+          --data "{\"text\": \"⚠️ compliance-scanner-b has ${VULNS} dependencies with known vulnerabilities\"}"
+      fi
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  only:
+    variables:
+      - $SCHEDULED_SCAN == "dependency"

@@ -1,0 +1,28 @@
+# Enforce mTLS for all pods in compliance namespace
+# STRICT mode requires all connections to use mTLS
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: compliance
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: istio-security
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# Namespace-level mTLS policy for istio-system (mesh-wide)
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: mesh-wide-mtls
+  namespace: istio-system
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: istio-security
+spec:
+  mtls:
+    mode: STRICT

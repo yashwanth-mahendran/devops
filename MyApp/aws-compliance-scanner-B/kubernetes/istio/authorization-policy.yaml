@@ -1,0 +1,71 @@
+# Authorization Policy for compliance-scanner
+# Restricts access to only allowed sources
+
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: compliance-scanner-authz
+  namespace: compliance
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: istio-security
+spec:
+  selector:
+    matchLabels:
+      app: compliance-scanner
+  action: ALLOW
+  rules:
+    # Allow from Istio ingress gateway
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+      to:
+        - operation:
+            methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+            paths: ["/api/v1/*", "/healthz", "/readyz", "/metrics", "/docs", "/openapi.json"]
+
+    # Allow from Prometheus for metrics scraping
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+            principals:
+              - "cluster.local/ns/monitoring/sa/prometheus"
+              - "cluster.local/ns/monitoring/sa/prometheus-sa"
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/metrics"]
+
+    # Allow internal liveness/readiness probes (from kubelet on any node)
+    - from:
+        - source:
+            ipBlocks: ["10.0.0.0/8"]
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/healthz", "/readyz"]
+
+    # Allow internal pod-to-pod communication (same app)
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/compliance/sa/compliance-scanner-sa"
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+
+---
+# Deny-all policy for pods without explicit allow rules
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-default
+  namespace: compliance
+  labels:
+    app.kubernetes.io/name: compliance-scanner
+    app.kubernetes.io/component: istio-security
+spec:
+  # No selector = applies to all pods in namespace
+  # Empty rules = deny all
+  {}
